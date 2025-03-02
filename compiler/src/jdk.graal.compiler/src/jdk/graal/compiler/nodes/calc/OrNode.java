@@ -24,6 +24,9 @@
  */
 package jdk.graal.compiler.nodes.calc;
 
+import com.microsoft.z3.Context;
+import com.microsoft.z3.Expr;
+import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.BinaryOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.BinaryOp.Or;
@@ -34,6 +37,7 @@ import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
 import jdk.graal.compiler.nodes.ConstantNode;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.Canonicalizable;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
@@ -119,5 +123,25 @@ public final class OrNode extends BinaryArithmeticNode<Or> implements Canonicali
     @Override
     public void generate(NodeLIRBuilderTool nodeValueMap, ArithmeticLIRGeneratorTool gen) {
         nodeValueMap.setResult(this, gen.emitOr(nodeValueMap.operand(getX()), nodeValueMap.operand(getY())));
+    }
+
+    @Override
+    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
+        var left = x.createSMTsolverexpression(ctx, solver);
+        var right = y.createSMTsolverexpression(ctx, solver);
+
+        if (left == null || right == null || !left.getClass().equals(right.getClass())) {
+            return null;
+        }
+
+        return switch (left) {
+            case SmtRepresentation.IntegerRepresentation(var leftBV): {
+                var rightBV = ((SmtRepresentation.IntegerRepresentation) right).value();
+                yield new SmtRepresentation.IntegerRepresentation(ctx.mkBVOR(leftBV, rightBV));
+            }
+            default: {
+                yield null;
+            }
+        };
     }
 }

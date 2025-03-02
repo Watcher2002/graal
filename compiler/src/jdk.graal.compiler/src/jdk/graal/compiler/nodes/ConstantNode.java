@@ -29,6 +29,10 @@ import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
 import java.util.Map;
 
+import com.microsoft.z3.BitVecExpr;
+import com.microsoft.z3.BoolExpr;
+import com.microsoft.z3.Context;
+import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.LIRKind;
 import jdk.graal.compiler.core.common.type.AbstractObjectStamp;
 import jdk.graal.compiler.core.common.type.FloatStamp;
@@ -240,7 +244,7 @@ public final class ConstantNode extends FloatingNode implements LIRLowerable, Ar
     public static ConstantNode forPrimitive(Stamp stamp, JavaConstant constant, StructuredGraph graph) {
         if (stamp instanceof IntegerStamp) {
             assert constant.getJavaKind().isNumericInteger() && stamp.getStackKind() == constant.getJavaKind().getStackKind() : Assertions.errorMessageContext("constant", constant, "stamp",
-                            stamp);
+                    stamp);
             IntegerStamp istamp = (IntegerStamp) stamp;
             return forIntegerBits(istamp.getBits(), constant, graph);
         } else {
@@ -256,7 +260,7 @@ public final class ConstantNode extends FloatingNode implements LIRLowerable, Ar
         if (stamp instanceof IntegerStamp) {
             PrimitiveConstant primitive = (PrimitiveConstant) constant;
             assert primitive.getJavaKind().isNumericInteger() && stamp.getStackKind() == primitive.getJavaKind().getStackKind() : Assertions.errorMessageContext("primitive", primitive, "stamp",
-                            stamp);
+                    stamp);
             IntegerStamp istamp = (IntegerStamp) stamp;
             return forIntegerBits(istamp.getBits(), primitive);
         } else if (stamp instanceof FloatStamp) {
@@ -548,5 +552,53 @@ public final class ConstantNode extends FloatingNode implements LIRLowerable, Ar
             return null;
         }
         return ConstantNode.forInt(length);
+    }
+
+    @Override
+    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
+        return switch (stamp) {
+            case IntegerStamp integerStamp: {
+                int bitWidth = integerStamp.getBits();
+                long minValue = integerStamp.lowerBound();
+                long maxValue = integerStamp.upperBound();
+
+                long mustBeSet = integerStamp.mustBeSet();
+                long mayBeSet = integerStamp.mayBeSet();
+
+                ctx.mkBitVecSort(bitWidth);
+
+                assert this.asJavaConstant() != null;
+                var bitVecValue = ctx.mkBV(this.asJavaConstant().asLong(), bitWidth);
+
+                BitVecExpr minValueExpr = ctx.mkBV(minValue, bitWidth);
+                BitVecExpr maxValueExpr = ctx.mkBV(maxValue, bitWidth);
+                BoolExpr withinBounds = ctx.mkAnd(
+                        ctx.mkBVSLE(minValueExpr, bitVecValue),
+                        ctx.mkBVSLE(bitVecValue, maxValueExpr)
+                );
+
+                BitVecExpr mustBeSetExpr = ctx.mkBV(mustBeSet, bitWidth);
+                BitVecExpr mayBeSetExpr = ctx.mkBV(mayBeSet, bitWidth);
+                BoolExpr mustBeSetConstraint = ctx.mkEq(
+                        ctx.mkBVAND(bitVecValue, mustBeSetExpr),
+                        mustBeSetExpr
+                );
+
+                // TODO: Check if used
+                BoolExpr mayBeSetConstraint = ctx.mkEq(
+                        ctx.mkBVAND(bitVecValue, ctx.mkBVNot(mayBeSetExpr)),
+                        ctx.mkBV(0, bitWidth)
+                );
+
+                BoolExpr allConstraints = ctx.mkAnd(withinBounds, mustBeSetConstraint, mayBeSetConstraint);
+                solver.add(allConstraints);
+                yield new SmtRepresentation.IntegerRepresentation(bitVecValue);
+
+            }
+            // TODO: More stamp types.
+            default: {
+                yield null;
+            }
+        };
     }
 }

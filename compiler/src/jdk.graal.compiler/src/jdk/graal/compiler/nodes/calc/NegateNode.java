@@ -27,6 +27,8 @@ package jdk.graal.compiler.nodes.calc;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_2;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
+import com.microsoft.z3.Context;
+import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp.Neg;
@@ -35,6 +37,8 @@ import jdk.graal.compiler.core.common.type.FloatStamp;
 import jdk.graal.compiler.core.common.type.Stamp;
 import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SMTUtils;
+import jdk.graal.compiler.nodes.SmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
 import jdk.graal.compiler.nodes.spi.NodeLIRBuilderTool;
@@ -117,5 +121,22 @@ public class NegateNode extends UnaryArithmeticNode<Neg> implements NarrowableAr
     @Override
     public Stamp invertStamp(Stamp outStamp) {
         return getArithmeticOp().foldStamp(outStamp);
+    }
+
+    @Override
+    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
+        var negateValue = value.createSMTsolverexpression(ctx, solver);
+        if (negateValue == null) {
+            return null;
+        }
+
+        return switch (negateValue) {
+            case SmtRepresentation.IntegerRepresentation(var negateBV): {
+                yield new SmtRepresentation.IntegerRepresentation(SMTUtils.negateBV(ctx, negateBV));
+            }
+            default: {
+                yield null;
+            }
+        };
     }
 }

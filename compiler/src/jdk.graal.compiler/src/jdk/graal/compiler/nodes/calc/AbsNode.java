@@ -27,6 +27,9 @@ package jdk.graal.compiler.nodes.calc;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_2;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
+import com.microsoft.z3.BitVecExpr;
+import com.microsoft.z3.Context;
+import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp.Abs;
@@ -35,6 +38,8 @@ import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SMTUtils;
+import jdk.graal.compiler.nodes.SmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.ArithmeticLIRLowerable;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
@@ -58,7 +63,7 @@ public final class AbsNode extends UnaryArithmeticNode<Abs> implements Arithmeti
         if (synonym != null) {
             return synonym;
         }
-        return new AbsNode(value);
+        return new NegateNode(value);
     }
 
     protected static ValueNode findSynonym(ValueNode forValue, NodeView view) {
@@ -118,5 +123,23 @@ public final class AbsNode extends UnaryArithmeticNode<Abs> implements Arithmeti
     @Override
     public void generate(NodeLIRBuilderTool nodeValueMap, ArithmeticLIRGeneratorTool gen) {
         nodeValueMap.setResult(this, gen.emitMathAbs(nodeValueMap.operand(getValue())));
+    }
+
+    @Override
+    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
+        var absValue = value.createSMTsolverexpression(ctx, solver);
+
+        return switch (absValue) {
+            case SmtRepresentation.IntegerRepresentation(var x): {
+                yield new SmtRepresentation.IntegerRepresentation((BitVecExpr) ctx.mkITE(
+                        ctx.mkLt(ctx.mkBV2Int(x, true), ctx.mkInt(0)),
+                        SMTUtils.negateBV(ctx, x),
+                        x
+                ));
+            }
+            default: {
+                yield null;
+            }
+        };
     }
 }

@@ -29,10 +29,17 @@ import static jdk.graal.compiler.phases.common.CanonicalizerPhase.CanonicalizerF
 import static jdk.graal.compiler.phases.common.CanonicalizerPhase.CanonicalizerFeature.GVN;
 import static jdk.graal.compiler.phases.common.CanonicalizerPhase.CanonicalizerFeature.READ_CANONICALIZATION;
 
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.Objects;
 import java.util.Optional;
 
+import com.microsoft.z3.Context;
+import com.microsoft.z3.Status;
+import jdk.graal.compiler.nodes.SmtRepresentation;
 import org.graalvm.collections.EconomicSet;
 
 import jdk.graal.compiler.core.common.type.Stamp;
@@ -577,6 +584,7 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                     if (canonical == node && nodeClass.isCommutative()) {
                         canonical = ((BinaryCommutative<?>) node).maybeCommuteInputs();
                     }
+                    checkCanonicalizationWithSMT(node, canonical, tool);
                 } catch (Throwable e) {
                     throw new GraalGraphError(e).addContext(node);
                 }
@@ -867,4 +875,37 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
         return features.contains(READ_CANONICALIZATION);
     }
 
+    private void checkCanonicalizationWithSMT(Node node, Node canonical, Tool tool) throws IOException {
+        var cfg = new HashMap<String, String>();
+        // TODO: Maybe turn on proof/model generation.
+        var ctx = new Context(cfg);
+        var solver = ctx.mkSolver();
+
+        tool.debug.log("Canonicalization has started");
+
+        var original = node.createSMTsolverexpression(ctx, solver);
+        var canonicalized = canonical.createSMTsolverexpression(ctx, solver);
+
+        if (original != null && canonicalized != null) {
+            if (original instanceof SmtRepresentation.IntegerRepresentation && canonicalized instanceof SmtRepresentation.IntegerRepresentation) {
+                solver.add(ctx.mkEq(((SmtRepresentation.IntegerRepresentation) original).value(), ((SmtRepresentation.IntegerRepresentation) canonicalized).value()));
+            } else {
+                tool.debug.log("Resulting types are not the same.");
+                return;
+            }
+
+            FileWriter fw = new FileWriter("smth.log", true);
+            BufferedWriter bw = new BufferedWriter(fw);
+            bw.write(solver.toString());
+            bw.newLine();
+            bw.close();
+
+            if (solver.check() != Status.SATISFIABLE) {
+                tool.debug.log("Canonicalization is incorrect.");
+                throw new RuntimeException("Canonicalization is incorrect.");
+            } else {
+                tool.debug.log("Canonicalization is correct.");
+            }
+        }
+    }
 }

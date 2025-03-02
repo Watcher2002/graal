@@ -34,6 +34,10 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 
+import com.microsoft.z3.BitVecExpr;
+import com.microsoft.z3.BoolExpr;
+import com.microsoft.z3.Context;
+import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.LIRKind;
 import jdk.graal.compiler.core.common.NumUtil;
 import jdk.graal.compiler.core.common.calc.ReinterpretUtils;
@@ -42,6 +46,9 @@ import jdk.graal.compiler.core.common.type.ArithmeticOpTable.BinaryOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp;
 import jdk.graal.compiler.debug.Assertions;
 import jdk.graal.compiler.debug.GraalError;
+import jdk.graal.compiler.graph.Node;
+import jdk.graal.compiler.nodeinfo.Verbosity;
+import jdk.graal.compiler.nodes.SmtRepresentation;
 import jdk.vm.ci.code.CodeUtil;
 import jdk.vm.ci.meta.Constant;
 import jdk.vm.ci.meta.JavaConstant;
@@ -2629,5 +2636,34 @@ public final class IntegerStamp extends PrimitiveStamp {
             emptyStamps[logBits] = new IntegerStamp(1 << logBits, true);
             unrestrictedStamps[logBits] = new IntegerStamp(1 << logBits, false);
         }
+    }
+
+    public SmtRepresentation createBVRepresentation(Context ctx, Solver solver, Node node) {
+        int bitWidth = getBits();
+        long minValue = lowerBound();
+        long maxValue = upperBound();
+
+        long mustBeSet = mustBeSet();
+
+        ctx.mkBitVecSort(bitWidth);
+
+        var bitVecValue = ctx.mkBVConst(node.toString(), bitWidth);
+
+        BitVecExpr minValueExpr = ctx.mkBV(minValue, bitWidth);
+        BitVecExpr maxValueExpr = ctx.mkBV(maxValue, bitWidth);
+        BoolExpr withinBounds = ctx.mkAnd(
+                ctx.mkBVSLE(minValueExpr, bitVecValue),
+                ctx.mkBVSLE(bitVecValue, maxValueExpr)
+        );
+
+        BitVecExpr mustBeSetExpr = ctx.mkBV(mustBeSet, bitWidth);
+        BoolExpr mustBeSetConstraint = ctx.mkEq(
+                ctx.mkBVAND(bitVecValue, mustBeSetExpr),
+                mustBeSetExpr
+        );
+
+        BoolExpr allConstraints = ctx.mkAnd(withinBounds, mustBeSetConstraint);
+        solver.add(allConstraints);
+        return new SmtRepresentation.IntegerRepresentation(bitVecValue);
     }
 }
