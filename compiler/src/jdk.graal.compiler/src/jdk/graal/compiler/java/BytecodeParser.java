@@ -1595,31 +1595,31 @@ public abstract class BytecodeParser extends CoreProvidersDelegate implements Gr
     }
 
     protected ValueNode genIntegerAdd(ValueNode x, ValueNode y) {
-        return AddNode.create(x, y, NodeView.DEFAULT);
+        return new AddNode(x, y);
     }
 
     protected ValueNode genIntegerSub(ValueNode x, ValueNode y) {
-        return SubNode.create(x, y, NodeView.DEFAULT);
+        return new SubNode(x, y);
     }
 
     protected ValueNode genIntegerMul(ValueNode x, ValueNode y) {
-        return MulNode.create(x, y, NodeView.DEFAULT);
+        return new MulNode(x, y);
     }
 
     protected ValueNode genFloatAdd(ValueNode x, ValueNode y) {
-        return AddNode.create(x, y, NodeView.DEFAULT);
+        return new AddNode(x, y);
     }
 
     protected ValueNode genFloatSub(ValueNode x, ValueNode y) {
-        return SubNode.create(x, y, NodeView.DEFAULT);
+        return new SubNode(x, y);
     }
 
     protected ValueNode genFloatMul(ValueNode x, ValueNode y) {
-        return MulNode.create(x, y, NodeView.DEFAULT);
+        return new MulNode(x, y);
     }
 
     protected ValueNode genFloatDiv(ValueNode x, ValueNode y) {
-        return FloatDivNode.create(x, y, NodeView.DEFAULT);
+        return new FloatDivNode(x, y);
     }
 
     protected ValueNode genFloatRem(ValueNode x, ValueNode y) {
@@ -1627,63 +1627,63 @@ public abstract class BytecodeParser extends CoreProvidersDelegate implements Gr
     }
 
     protected ValueNode genIntegerDiv(ValueNode x, ValueNode y, GuardingNode zeroCheck) {
-        return SignedDivNode.create(x, y, zeroCheck, NodeView.DEFAULT);
+        return new SignedDivNode(x, y, zeroCheck);
     }
 
     protected ValueNode genIntegerRem(ValueNode x, ValueNode y, GuardingNode zeroCheck) {
-        return SignedRemNode.create(x, y, zeroCheck, NodeView.DEFAULT);
+        return new SignedRemNode(x, y, zeroCheck);
     }
 
     protected ValueNode genNegateOp(ValueNode x) {
-        return NegateNode.create(x, NodeView.DEFAULT);
+        return new NegateNode(x);
     }
 
     protected ValueNode genLeftShift(ValueNode x, ValueNode y) {
-        return LeftShiftNode.create(x, y, NodeView.DEFAULT);
+        return new LeftShiftNode(x, y);
     }
 
     protected ValueNode genRightShift(ValueNode x, ValueNode y) {
-        return RightShiftNode.create(x, y, NodeView.DEFAULT);
+        return new RightShiftNode(x, y);
     }
 
     protected ValueNode genUnsignedRightShift(ValueNode x, ValueNode y) {
-        return UnsignedRightShiftNode.create(x, y, NodeView.DEFAULT);
+        return new UnsignedRightShiftNode(x, y);
     }
 
     protected ValueNode genAnd(ValueNode x, ValueNode y) {
-        return AndNode.create(x, y, NodeView.DEFAULT);
+        return new AndNode(x, y);
     }
 
     protected ValueNode genOr(ValueNode x, ValueNode y) {
-        return OrNode.create(x, y, NodeView.DEFAULT);
+        return new OrNode(x, y);
     }
 
     protected ValueNode genXor(ValueNode x, ValueNode y) {
-        return XorNode.create(x, y, NodeView.DEFAULT);
+        return new XorNode(x, y);
     }
 
     protected ValueNode genNormalizeCompare(ValueNode x, ValueNode y, boolean isUnorderedLess) {
-        return FloatNormalizeCompareNode.create(x, y, isUnorderedLess, JavaKind.Int, getConstantReflection());
+        return new FloatNormalizeCompareNode(x, y, JavaKind.Int, isUnorderedLess);
     }
 
     protected ValueNode genIntegerNormalizeCompare(ValueNode x, ValueNode y) {
-        return IntegerNormalizeCompareNode.create(x, y, false, JavaKind.Int, getConstantReflection());
+        return new IntegerNormalizeCompareNode(x, y, JavaKind.Int, false);
     }
 
     protected ValueNode genFloatConvert(FloatConvert op, ValueNode input) {
-        return FloatConvertNode.create(op, input, NodeView.DEFAULT);
+        return new FloatConvertNode(op, input);
     }
 
     protected ValueNode genNarrow(ValueNode input, int bitCount) {
-        return NarrowNode.create(input, bitCount, NodeView.DEFAULT);
+        return new NarrowNode(input, bitCount);
     }
 
     protected ValueNode genSignExtend(ValueNode input, int bitCount) {
-        return SignExtendNode.create(input, bitCount, NodeView.DEFAULT);
+        return new SignExtendNode(input, bitCount);
     }
 
     protected ValueNode genZeroExtend(ValueNode input, int bitCount) {
-        return ZeroExtendNode.create(input, bitCount, NodeView.DEFAULT);
+        return new ZeroExtendNode(input, bitCount);
     }
 
     protected void genGoto() {
@@ -1692,15 +1692,15 @@ public abstract class BytecodeParser extends CoreProvidersDelegate implements Gr
     }
 
     protected LogicNode genObjectEquals(ValueNode x, ValueNode y) {
-        return ObjectEqualsNode.create(getConstantReflection(), getMetaAccess(), options, x, y, NodeView.DEFAULT);
+        return new ObjectEqualsNode(x, y);
     }
 
     protected LogicNode genIntegerEquals(ValueNode x, ValueNode y) {
-        return IntegerEqualsNode.create(getConstantReflection(), getMetaAccess(), options, null, x, y, NodeView.DEFAULT);
+        return new IntegerEqualsNode(x, y);
     }
 
     protected LogicNode genIntegerLessThan(ValueNode x, ValueNode y) {
-        return IntegerLessThanNode.create(getConstantReflection(), getMetaAccess(), options, null, x, y, NodeView.DEFAULT);
+        return new IntegerLessThanNode(x, y);
     }
 
     protected ValueNode genUnique(ValueNode x) {
