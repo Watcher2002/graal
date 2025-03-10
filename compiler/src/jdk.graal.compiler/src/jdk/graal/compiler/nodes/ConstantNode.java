@@ -569,6 +569,7 @@ public final class ConstantNode extends FloatingNode implements LIRLowerable, Ar
 
                 assert this.asJavaConstant() != null;
                 var bitVecValue = ctx.mkBV(this.asJavaConstant().asLong(), bitWidth);
+                SmtRepresentation.IntegerRepresentation.bitVectors.add(bitVecValue);
 
                 BitVecExpr minValueExpr = ctx.mkBV(minValue, bitWidth);
                 BitVecExpr maxValueExpr = ctx.mkBV(maxValue, bitWidth);
@@ -578,19 +579,12 @@ public final class ConstantNode extends FloatingNode implements LIRLowerable, Ar
                 );
 
                 BitVecExpr mustBeSetExpr = ctx.mkBV(mustBeSet, bitWidth);
-                BitVecExpr mayBeSetExpr = ctx.mkBV(mayBeSet, bitWidth);
                 BoolExpr mustBeSetConstraint = ctx.mkEq(
                         ctx.mkBVAND(bitVecValue, mustBeSetExpr),
                         mustBeSetExpr
                 );
 
-                // TODO: Check if used
-                BoolExpr mayBeSetConstraint = ctx.mkEq(
-                        ctx.mkBVAND(bitVecValue, ctx.mkBVNot(mayBeSetExpr)),
-                        ctx.mkBV(0, bitWidth)
-                );
-
-                BoolExpr allConstraints = ctx.mkAnd(withinBounds, mustBeSetConstraint, mayBeSetConstraint);
+                BoolExpr allConstraints = ctx.mkAnd(withinBounds, mustBeSetConstraint);
                 solver.add(allConstraints);
                 yield new SmtRepresentation.IntegerRepresentation(bitVecValue);
 

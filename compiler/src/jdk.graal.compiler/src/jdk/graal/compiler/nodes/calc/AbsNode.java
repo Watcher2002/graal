@@ -38,7 +38,6 @@ import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
 import jdk.graal.compiler.nodes.NodeView;
-import jdk.graal.compiler.nodes.SMTUtils;
 import jdk.graal.compiler.nodes.SmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.ArithmeticLIRLowerable;
@@ -133,7 +132,7 @@ public final class AbsNode extends UnaryArithmeticNode<Abs> implements Arithmeti
             case SmtRepresentation.IntegerRepresentation(var x): {
                 yield new SmtRepresentation.IntegerRepresentation((BitVecExpr) ctx.mkITE(
                         ctx.mkLt(ctx.mkBV2Int(x, true), ctx.mkInt(0)),
-                        SMTUtils.negateBV(ctx, x),
+                        ctx.mkBVNeg(x),
                         x
                 ));
             }

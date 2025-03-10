@@ -38,6 +38,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 import com.microsoft.z3.Context;
+import com.microsoft.z3.Expr;
 import com.microsoft.z3.Status;
 import jdk.graal.compiler.nodes.SmtRepresentation;
 import org.graalvm.collections.EconomicSet;
@@ -877,18 +878,22 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
 
     private void checkCanonicalizationWithSMT(Node node, Node canonical, Tool tool) throws IOException {
         var cfg = new HashMap<String, String>();
-        // TODO: Maybe turn on proof/model generation.
+        cfg.put("proof", "true");
         var ctx = new Context(cfg);
         var solver = ctx.mkSolver();
 
         tool.debug.log("Canonicalization has started");
+
+        SmtRepresentation.IntegerRepresentation.bitVectors.clear();
 
         var original = node.createSMTsolverexpression(ctx, solver);
         var canonicalized = canonical.createSMTsolverexpression(ctx, solver);
 
         if (original != null && canonicalized != null) {
             if (original instanceof SmtRepresentation.IntegerRepresentation && canonicalized instanceof SmtRepresentation.IntegerRepresentation) {
-                solver.add(ctx.mkEq(((SmtRepresentation.IntegerRepresentation) original).value(), ((SmtRepresentation.IntegerRepresentation) canonicalized).value()));
+                var eq = ctx.mkEq(((SmtRepresentation.IntegerRepresentation) original).value(), ((SmtRepresentation.IntegerRepresentation) canonicalized).value());
+                var negation = ctx.mkNot(eq);
+                solver.add(negation);
             } else {
                 tool.debug.log("Resulting types are not the same.");
                 return;
@@ -898,14 +903,22 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
             BufferedWriter bw = new BufferedWriter(fw);
             bw.write(solver.toString());
             bw.newLine();
+
+            var result = solver.check();
+
+            if (result == Status.SATISFIABLE) {
+                // TODO: Why it isn't true, proof generation is already setup.
+                tool.debug.log("Canonicalization is incorrect.");
+                throw new RuntimeException("Canonicalization is incorrect. Example: " + solver.getModel());
+            } else if (result == Status.UNSATISFIABLE) {
+                tool.debug.log("Canonicalization is correct.");
+            } else {
+                tool.debug.log("Canonicalization's result is unknown");
+                bw.write("Unknown :(");
+            }
             bw.close();
 
-            if (solver.check() != Status.SATISFIABLE) {
-                tool.debug.log("Canonicalization is incorrect.");
-                throw new RuntimeException("Canonicalization is incorrect.");
-            } else {
-                tool.debug.log("Canonicalization is correct.");
-            }
+
         }
     }
 }

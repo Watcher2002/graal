@@ -37,7 +37,6 @@ import jdk.graal.compiler.core.common.type.FloatStamp;
 import jdk.graal.compiler.core.common.type.Stamp;
 import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.nodes.NodeView;
-import jdk.graal.compiler.nodes.SMTUtils;
 import jdk.graal.compiler.nodes.SmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
@@ -132,7 +131,7 @@ public class NegateNode extends UnaryArithmeticNode<Neg> implements NarrowableAr
 
         return switch (negateValue) {
             case SmtRepresentation.IntegerRepresentation(var negateBV): {
-                yield new SmtRepresentation.IntegerRepresentation(SMTUtils.negateBV(ctx, negateBV));
+                yield new SmtRepresentation.IntegerRepresentation(ctx.mkBVNeg(negateBV));
             }
             default: {
                 yield null;

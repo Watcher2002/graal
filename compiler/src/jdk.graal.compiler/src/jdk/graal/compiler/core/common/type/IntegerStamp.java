@@ -2648,6 +2648,7 @@ public final class IntegerStamp extends PrimitiveStamp {
         ctx.mkBitVecSort(bitWidth);
 
         var bitVecValue = ctx.mkBVConst(node.toString(), bitWidth);
+        SmtRepresentation.IntegerRepresentation.bitVectors.add(bitVecValue);
 
         BitVecExpr minValueExpr = ctx.mkBV(minValue, bitWidth);
         BitVecExpr maxValueExpr = ctx.mkBV(maxValue, bitWidth);
