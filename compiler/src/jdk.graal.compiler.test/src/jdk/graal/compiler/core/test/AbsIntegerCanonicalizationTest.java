@@ -19,20 +19,20 @@ public class AbsIntegerCanonicalizationTest extends GraalCompilerTest {
         return Math.abs(-x);
     }
 
-//    @Test
-//    public void testAbsNegate() {
-//        StructuredGraph graph = parseEager("absNegate", StructuredGraph.AllowAssumptions.YES);
-//        createInliningPhase().apply(graph, getDefaultHighTierContext());
-//        createCanonicalizerPhase().apply(graph, getProviders());
-//
-//        StructuredGraph referenceGraph = parseEager("absReference", StructuredGraph.AllowAssumptions.YES);
-//        assertEquals(referenceGraph, graph);
-//        Assert.assertEquals(0, graph.getNodes().filter(NegateNode.class).count());
-//
-//        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absNegate(-Integer.MAX_VALUE), null), (Object) null, Integer.MAX_VALUE);
-//        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absNegate(0), null), (Object) null, 0);
-//        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absNegate(Integer.MAX_VALUE), null), (Object) null, Integer.MAX_VALUE);
-//    }
+    @Test
+    public void testAbsNegate() {
+        StructuredGraph graph = parseEager("absNegate", StructuredGraph.AllowAssumptions.YES);
+        createInliningPhase().apply(graph, getDefaultHighTierContext());
+        createCanonicalizerPhase().apply(graph, getProviders());
+
+        StructuredGraph referenceGraph = parseEager("absReference", StructuredGraph.AllowAssumptions.YES);
+        assertEquals(referenceGraph, graph);
+        Assert.assertEquals(0, graph.getNodes().filter(NegateNode.class).count());
+
+        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absNegate(-Integer.MAX_VALUE), null), (Object) null, Integer.MAX_VALUE);
+        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absNegate(0), null), (Object) null, 0);
+        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absNegate(Integer.MAX_VALUE), null), (Object) null, Integer.MAX_VALUE);
+    }
 
     public static int leftShift(int x) {
         return x * 2;
@@ -44,21 +44,37 @@ public class AbsIntegerCanonicalizationTest extends GraalCompilerTest {
         createInliningPhase().apply(graph, getDefaultHighTierContext());
         createCanonicalizerPhase().apply(graph, getProviders());
 
-        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(leftShift(1), null), (Object) null, 2);
+        assertEquals(new Result(2, null), new Result(leftShift(1), null));
+        assertEquals(new Result(4098, null), new Result(leftShift(2049), null));
     }
 
-//    @Test
-//    public void testAbsAbs() {
-//        StructuredGraph graph = parseEager("absAbs", StructuredGraph.AllowAssumptions.YES);
-//        createInliningPhase().apply(graph, getDefaultHighTierContext());
-//        createCanonicalizerPhase().apply(graph, getProviders());
-//
-//        StructuredGraph referenceGraph = parseEager("absReference", StructuredGraph.AllowAssumptions.YES);
-//        assertEquals(referenceGraph, graph);
-//        Assert.assertEquals(1, graph.getNodes().filter(AbsNode.class).count());
-//
-//        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absAbs(-Integer.MAX_VALUE), null), (Object) null, Integer.MAX_VALUE);
-//        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absAbs(0), null), (Object) null, 0);
-//        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absAbs(Integer.MAX_VALUE), null), (Object) null, Integer.MAX_VALUE);
-//    }
+    @Test
+    public void testAbsAbs() {
+        StructuredGraph graph = parseEager("absAbs", StructuredGraph.AllowAssumptions.YES);
+        createInliningPhase().apply(graph, getDefaultHighTierContext());
+        createCanonicalizerPhase().apply(graph, getProviders());
+
+        StructuredGraph referenceGraph = parseEager("absReference", StructuredGraph.AllowAssumptions.YES);
+        assertEquals(referenceGraph, graph);
+        Assert.assertEquals(1, graph.getNodes().filter(AbsNode.class).count());
+
+        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absAbs(-Integer.MAX_VALUE), null), (Object) null, Integer.MAX_VALUE);
+        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absAbs(0), null), (Object) null, 0);
+        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absAbs(Integer.MAX_VALUE), null), (Object) null, Integer.MAX_VALUE);
+    }
+
+    public static double signum(int x) {
+        return Math.signum(x);
+    }
+
+    @Test
+    public void testSignum() {
+        StructuredGraph graph = parseEager("signum", StructuredGraph.AllowAssumptions.YES);
+        createInliningPhase().apply(graph, getDefaultHighTierContext());
+        createCanonicalizerPhase().apply(graph, getProviders());
+
+        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(signum(0), null), (Object) null, 0);
+        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(signum(Integer.MAX_VALUE), null), (Object) null, 1);
+        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(signum(Integer.MIN_VALUE), null), (Object) null, -1);
+    }
 }

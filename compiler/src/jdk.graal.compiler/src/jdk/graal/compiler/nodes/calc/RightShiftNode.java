@@ -24,6 +24,8 @@
  */
 package jdk.graal.compiler.nodes.calc;
 
+import com.microsoft.z3.Context;
+import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.ShiftOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.ShiftOp.Shr;
@@ -35,6 +37,7 @@ import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
 import jdk.graal.compiler.nodes.ConstantNode;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
 import jdk.graal.compiler.nodes.spi.NodeLIRBuilderTool;

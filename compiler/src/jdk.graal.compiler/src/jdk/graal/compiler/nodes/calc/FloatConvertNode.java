@@ -26,6 +26,8 @@ package jdk.graal.compiler.nodes.calc;
 
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_8;
 
+import com.microsoft.z3.Context;
+import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.calc.FloatConvert;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.FloatConvertOp;
@@ -38,6 +40,8 @@ import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SMTUtils;
+import jdk.graal.compiler.nodes.SmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.ArithmeticLIRLowerable;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
@@ -159,5 +163,17 @@ public final class FloatConvertNode extends UnaryArithmeticNode<FloatConvertOp> 
     @Override
     public boolean mayNullCheckSkipConversion() {
         return false;
+    }
+
+    @Override
+    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
+        var conv = value.createSMTsolverexpression(ctx, solver);
+        return switch (conv) {
+            case SmtRepresentation.FloatRepresentation(var x) -> // TODO Jakub ASK
+                    new SmtRepresentation.IntegerRepresentation(ctx.mkFPToBV(ctx.mkFPRoundNearestTiesToAway(), x, x.getEBits() + x.getSBits(), true));
+            case SmtRepresentation.IntegerRepresentation(var x) ->
+                    new SmtRepresentation.FloatRepresentation(SMTUtils.BV2FP(ctx, x));
+            case SmtRepresentation.UnknownRepresentation() -> conv;
+        };
     }
 }

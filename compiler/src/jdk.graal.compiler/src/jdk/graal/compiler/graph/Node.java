@@ -1860,7 +1860,7 @@ public abstract class Node implements Cloneable, Formattable {
      * Node subclasses should override this method to specify how to add them to SMT solver.
      */
     public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
-        return null;
+        return new SmtRepresentation.UnknownRepresentation();
     };
 
 }

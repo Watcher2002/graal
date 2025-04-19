@@ -37,6 +37,7 @@ import jdk.graal.compiler.core.common.type.FloatStamp;
 import jdk.graal.compiler.core.common.type.Stamp;
 import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SMTUtils;
 import jdk.graal.compiler.nodes.SmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
@@ -76,6 +77,9 @@ public class NegateNode extends UnaryArithmeticNode<Neg> implements NarrowableAr
 
     @Override
     public ValueNode canonical(CanonicalizerTool tool, ValueNode forValue) {
+        if (SMTUtils.breakCanonicalization("Negate", forValue.graph())) {
+            return new AbsNode(forValue);
+        }
         ValueNode synonym = findSynonym(forValue, NodeView.DEFAULT);
         if (synonym != null) {
             return synonym;
@@ -125,17 +129,15 @@ public class NegateNode extends UnaryArithmeticNode<Neg> implements NarrowableAr
     @Override
     public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
         var negateValue = value.createSMTsolverexpression(ctx, solver);
-        if (negateValue == null) {
-            return null;
-        }
 
         return switch (negateValue) {
-            case SmtRepresentation.IntegerRepresentation(var negateBV): {
-                yield new SmtRepresentation.IntegerRepresentation(ctx.mkBVNeg(negateBV));
+            case SmtRepresentation.IntegerRepresentation(var x): {
+                yield new SmtRepresentation.IntegerRepresentation(ctx.mkBVNeg(x));
             }
-            default: {
-                yield null;
-            }
+            case SmtRepresentation.FloatRepresentation(var x):
+                yield new SmtRepresentation.FloatRepresentation(ctx.mkFPNeg(x));
+            case SmtRepresentation.UnknownRepresentation():
+                yield new SmtRepresentation.UnknownRepresentation();
         };
     }
 }

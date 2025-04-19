@@ -337,15 +337,10 @@ public abstract class ValueNode extends Node implements ValueNodeInterface {
 
     @Override
     public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
-        // TODO: In case of integer stamp, represent it as a BV, with the given width.
-        switch (stamp) {
-            case IntegerStamp stmp -> {
-                return stmp.createBVRepresentation(ctx, solver, this);
-            }
-            // TODO: More stamp types
-            default -> {
-                return null;
-            }
-        }
+        return switch (stamp) {
+            case IntegerStamp stmp -> stmp.createBVRepresentation(ctx, solver, this);
+            case FloatStamp stmp -> stmp.createBVRepresentation(ctx, solver, this);
+            default -> new SmtRepresentation.UnknownRepresentation();
+        };
     }
 }

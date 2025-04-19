@@ -26,6 +26,8 @@ package jdk.graal.compiler.nodes.calc;
 
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_1;
 
+import com.microsoft.z3.Context;
+import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.calc.CanonicalCondition;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.IntegerConvertOp;
@@ -38,6 +40,7 @@ import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
 import jdk.graal.compiler.nodes.spi.NodeLIRBuilderTool;
@@ -208,5 +211,16 @@ public final class NarrowNode extends IntegerConvertNode<Narrow> {
     @Override
     public boolean mayNullCheckSkipConversion() {
         return false;
+    }
+
+    @Override
+    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
+        var node = value.createSMTsolverexpression(ctx, solver);
+
+        return switch (node) {
+            case SmtRepresentation.IntegerRepresentation(var x) ->
+                    new SmtRepresentation.IntegerRepresentation(ctx.mkExtract(resultBits - 1, 0, x));
+            default -> new SmtRepresentation.UnknownRepresentation();
+        };
     }
 }

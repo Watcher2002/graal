@@ -27,6 +27,9 @@ package jdk.graal.compiler.nodes;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_2;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_4;
 
+import com.microsoft.z3.Context;
+import com.microsoft.z3.Solver;
+import jdk.graal.compiler.graph.Node;
 import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
 import jdk.graal.compiler.nodes.spi.LIRLowerable;
@@ -35,6 +38,8 @@ import jdk.graal.compiler.nodes.memory.MemoryMapNode;
 
 import jdk.vm.ci.code.TargetDescription;
 import jdk.vm.ci.meta.JavaKind;
+
+import java.util.ArrayList;
 
 @NodeInfo(cycles = CYCLES_2, size = SIZE_4, cyclesRationale = "Restore frame + ret", sizeRationale = "Restore frame + ret")
 public final class ReturnNode extends MemoryMapControlSinkNode implements LIRLowerable {
@@ -77,4 +82,23 @@ public final class ReturnNode extends MemoryMapControlSinkNode implements LIRLow
         }
         return true;
     }
+
+//    @Override
+//    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
+//        var list = new ArrayList<SmtRepresentation>();
+//        for (Node node: inputs()) {
+//            var value = node.createSMTsolverexpression(ctx, solver);
+//            if (value instanceof SmtRepresentation.UnknownRepresentation) {
+//                return new SmtRepresentation.UnknownRepresentation();
+//            }
+//            list.add(value);
+//        }
+//
+//        for (SmtRepresentation repr : list) {
+//            if (repr instanceof SmtRepresentation.IntegerRepresentation) {
+//                solver.add(((SmtRepresentation.IntegerRepresentation) repr).value());
+//            }
+//        }
+//
+//    }
 }

@@ -40,6 +40,7 @@ import java.util.Optional;
 import com.microsoft.z3.Context;
 import com.microsoft.z3.Expr;
 import com.microsoft.z3.Status;
+import jdk.graal.compiler.nodes.SMTUtils;
 import jdk.graal.compiler.nodes.SmtRepresentation;
 import org.graalvm.collections.EconomicSet;
 
@@ -884,41 +885,58 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
 
         tool.debug.log("Canonicalization has started");
 
+        // TODO JAKUB Probably delete, as it is unnecessary
         SmtRepresentation.IntegerRepresentation.bitVectors.clear();
+        SmtRepresentation.FloatRepresentation.floats.clear();
 
         var original = node.createSMTsolverexpression(ctx, solver);
         var canonicalized = canonical.createSMTsolverexpression(ctx, solver);
 
-        if (original != null && canonicalized != null) {
-            if (original instanceof SmtRepresentation.IntegerRepresentation && canonicalized instanceof SmtRepresentation.IntegerRepresentation) {
-                var eq = ctx.mkEq(((SmtRepresentation.IntegerRepresentation) original).value(), ((SmtRepresentation.IntegerRepresentation) canonicalized).value());
-                var negation = ctx.mkNot(eq);
-                solver.add(negation);
-            } else {
-                tool.debug.log("Resulting types are not the same.");
-                return;
-            }
-
-            FileWriter fw = new FileWriter("smth.log", true);
-            BufferedWriter bw = new BufferedWriter(fw);
-            bw.write(solver.toString());
-            bw.newLine();
-
-            var result = solver.check();
-
-            if (result == Status.SATISFIABLE) {
-                // TODO: Why it isn't true, proof generation is already setup.
-                tool.debug.log("Canonicalization is incorrect.");
-                throw new RuntimeException("Canonicalization is incorrect. Example: " + solver.getModel());
-            } else if (result == Status.UNSATISFIABLE) {
-                tool.debug.log("Canonicalization is correct.");
-            } else {
-                tool.debug.log("Canonicalization's result is unknown");
-                bw.write("Unknown :(");
-            }
-            bw.close();
-
-
+        if (original instanceof SmtRepresentation.UnknownRepresentation || canonicalized instanceof SmtRepresentation.UnknownRepresentation) {
+            tool.debug.log("One of the values is unknown.");
+            return;
         }
+        else if (original instanceof SmtRepresentation.IntegerRepresentation && canonicalized instanceof SmtRepresentation.IntegerRepresentation) {
+            var eq = ctx.mkEq(((SmtRepresentation.IntegerRepresentation) original).value(), ((SmtRepresentation.IntegerRepresentation) canonicalized).value());
+            var negation = ctx.mkNot(eq);
+            solver.add(negation);
+        }
+        else if (original instanceof SmtRepresentation.FloatRepresentation && canonicalized instanceof SmtRepresentation.FloatRepresentation) {
+            var eq = ctx.mkEq(((SmtRepresentation.FloatRepresentation) original).value(), ((SmtRepresentation.FloatRepresentation) canonicalized).value());
+            solver.add(ctx.mkNot(eq));
+        }
+        else if (original instanceof SmtRepresentation.IntegerRepresentation && canonicalized instanceof SmtRepresentation.FloatRepresentation) {
+            var fp = ((SmtRepresentation.FloatRepresentation) canonicalized).value();
+            var asFP = SMTUtils.BV2FP(ctx, ((SmtRepresentation.IntegerRepresentation) original).value(), fp);
+
+            var eq = ctx.mkEq(fp, asFP);
+            solver.add(ctx.mkNot(eq));
+        }
+        else if (original instanceof SmtRepresentation.FloatRepresentation && canonicalized instanceof SmtRepresentation.IntegerRepresentation) {
+            var fp = ((SmtRepresentation.FloatRepresentation) original).value();
+            var asFP = SMTUtils.BV2FP(ctx, ((SmtRepresentation.IntegerRepresentation) canonicalized).value(), fp);
+
+            var eq = ctx.mkEq(fp, asFP);
+            solver.add(ctx.mkNot(eq));
+        }
+
+        FileWriter fw = new FileWriter("smth.log", true);
+        BufferedWriter bw = new BufferedWriter(fw);
+        bw.write(solver.toString());
+        bw.newLine();
+        bw.close();
+
+        var result = solver.check();
+
+        if (result == Status.SATISFIABLE) {
+            tool.debug.log("Canonicalization is incorrect.");
+            throw new RuntimeException("Canonicalization is incorrect. Example: " + solver.getModel());
+        } else if (result == Status.UNSATISFIABLE) {
+            tool.debug.log("Canonicalization is correct.");
+        } else {
+            tool.debug.log("Canonicalization's result is unknown");
+        }
+
+
     }
 }

@@ -38,6 +38,7 @@ import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SMTUtils;
 import jdk.graal.compiler.nodes.SmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.ArithmeticLIRLowerable;
@@ -62,11 +63,11 @@ public final class AbsNode extends UnaryArithmeticNode<Abs> implements Arithmeti
         if (synonym != null) {
             return synonym;
         }
-        return new NegateNode(value);
+        return new AbsNode(value);
     }
 
     protected static ValueNode findSynonym(ValueNode forValue, NodeView view) {
-        ArithmeticOpTable.UnaryOp<Abs> absOp = ArithmeticOpTable.forStamp(forValue.stamp(view)).getAbs();
+        UnaryOp<Abs> absOp = ArithmeticOpTable.forStamp(forValue.stamp(view)).getAbs();
         ValueNode synonym = UnaryArithmeticNode.findSynonym(forValue, absOp);
         if (synonym != null) {
             return synonym;
@@ -93,6 +94,9 @@ public final class AbsNode extends UnaryArithmeticNode<Abs> implements Arithmeti
 
     @Override
     public ValueNode canonical(CanonicalizerTool tool, ValueNode forValue) {
+        if (SMTUtils.breakCanonicalization("Abs", forValue.graph())) {
+            return new NegateNode(forValue);
+        }
         ValueNode ret = super.canonical(tool, forValue);
         if (ret != this) {
             return ret;
@@ -131,14 +135,15 @@ public final class AbsNode extends UnaryArithmeticNode<Abs> implements Arithmeti
         return switch (absValue) {
             case SmtRepresentation.IntegerRepresentation(var x): {
                 yield new SmtRepresentation.IntegerRepresentation((BitVecExpr) ctx.mkITE(
-                        ctx.mkLt(ctx.mkBV2Int(x, true), ctx.mkInt(0)),
+                        ctx.mkBVSLT(x, ctx.mkBV(0, x.getSortSize())),
                         ctx.mkBVNeg(x),
                         x
                 ));
             }
-            default: {
-                yield null;
-            }
+            case SmtRepresentation.FloatRepresentation(var x):
+                yield new SmtRepresentation.FloatRepresentation(ctx.mkFPAbs(x));
+            case SmtRepresentation.UnknownRepresentation():
+                yield absValue;
         };
     }
 }

@@ -27,6 +27,10 @@ package jdk.graal.compiler.nodes.calc;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_2;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
+import com.microsoft.z3.BitVecExpr;
+import com.microsoft.z3.Context;
+import com.microsoft.z3.FPExpr;
+import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.type.FloatStamp;
 import jdk.graal.compiler.core.common.type.Stamp;
 import jdk.graal.compiler.debug.GraalError;
@@ -36,6 +40,8 @@ import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
 import jdk.graal.compiler.nodes.ConstantNode;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SMTUtils;
+import jdk.graal.compiler.nodes.SmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.ArithmeticLIRLowerable;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
@@ -74,6 +80,9 @@ public final class SignumNode extends UnaryNode implements ArithmeticLIRLowerabl
 
     @Override
     public Node canonical(CanonicalizerTool tool, ValueNode forValue) {
+        if (SMTUtils.breakCanonicalization("Signum", forValue.graph())) {
+            return new NegateNode(forValue);
+        }
         if (forValue.isJavaConstant()) {
             JavaConstant c = forValue.asJavaConstant();
             switch (c.getJavaKind()) {
@@ -91,5 +100,28 @@ public final class SignumNode extends UnaryNode implements ArithmeticLIRLowerabl
     @Override
     public void generate(NodeLIRBuilderTool nodeValueMap, ArithmeticLIRGeneratorTool gen) {
         nodeValueMap.setResult(this, gen.emitMathSignum(nodeValueMap.operand(getValue())));
+    }
+
+    @Override
+    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
+        var signum = value.createSMTsolverexpression(ctx, solver);
+
+        return switch (signum) {
+            case SmtRepresentation.FloatRepresentation(var x) -> {
+                var zero = ctx.mkFP(0, x.getSort());
+                var sort = x.getSort();
+                FPExpr expr = (FPExpr) ctx.mkITE(
+                        ctx.mkFPLt(x, zero),
+                        ctx.mkFP(-1, sort),
+                        ctx.mkITE(
+                                ctx.mkEq(x, zero),
+                                x,
+                                ctx.mkFP(1, sort)
+                        )
+                );
+                yield new SmtRepresentation.FloatRepresentation(expr);
+            }
+            default  -> new SmtRepresentation.UnknownRepresentation();
+        };
     }
 }

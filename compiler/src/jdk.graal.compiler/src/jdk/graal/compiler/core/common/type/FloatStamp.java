@@ -34,12 +34,18 @@ import static jdk.graal.compiler.core.common.calc.FloatConvert.F2L;
 import java.nio.ByteBuffer;
 import java.util.function.DoubleBinaryOperator;
 
+import com.microsoft.z3.Context;
+import com.microsoft.z3.FPExpr;
+import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.LIRKind;
 import jdk.graal.compiler.core.common.NumUtil;
 import jdk.graal.compiler.core.common.calc.ReinterpretUtils;
 import jdk.graal.compiler.core.common.spi.LIRKindTool;
 import jdk.graal.compiler.debug.Assertions;
 import jdk.graal.compiler.debug.GraalError;
+import jdk.graal.compiler.graph.Node;
+import jdk.graal.compiler.nodes.SMTUtils;
+import jdk.graal.compiler.nodes.SmtRepresentation;
 import jdk.graal.compiler.serviceprovider.GraalServices;
 import jdk.vm.ci.meta.Constant;
 import jdk.vm.ci.meta.JavaConstant;
@@ -1687,5 +1693,20 @@ public final class FloatStamp extends PrimitiveStamp {
         private static final FloatStamp DOUBLE_TOP = new FloatStamp(Double.SIZE, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, true);
         private static final FloatStamp FLOAT_NAN = new FloatStamp(Float.SIZE, Double.NaN, Double.NaN, false);
         private static final FloatStamp DOUBLE_NAN = new FloatStamp(Double.SIZE, Double.NaN, Double.NaN, false);
+    }
+
+    public SmtRepresentation createBVRepresentation(Context ctx, Solver solver, Node node) {
+        var sort = SMTUtils.getFPSort(ctx, getBits());
+        FPExpr fp = (FPExpr) ctx.mkConst(node.toString(), sort);
+
+        var minValue = ctx.mkFP(lowerBound, sort);
+        var maxValue = ctx.mkFP(upperBound, sort);
+
+        solver.add(ctx.mkAnd(
+                ctx.mkFPLEq(minValue, fp),
+                ctx.mkFPLEq(fp, maxValue)
+        ));
+
+        return new SmtRepresentation.FloatRepresentation(fp);
     }
 }

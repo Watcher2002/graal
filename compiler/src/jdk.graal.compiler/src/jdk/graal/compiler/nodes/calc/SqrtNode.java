@@ -27,6 +27,8 @@ package jdk.graal.compiler.nodes.calc;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_16;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
+import com.microsoft.z3.Context;
+import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp.Sqrt;
@@ -35,6 +37,7 @@ import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
 import jdk.graal.compiler.nodes.ConstantNode;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.ArithmeticLIRLowerable;
 import jdk.graal.compiler.nodes.spi.NodeLIRBuilderTool;
@@ -67,5 +70,17 @@ public final class SqrtNode extends UnaryArithmeticNode<Sqrt> implements Arithme
     @Override
     public void generate(NodeLIRBuilderTool nodeValueMap, ArithmeticLIRGeneratorTool gen) {
         nodeValueMap.setResult(this, gen.emitMathSqrt(nodeValueMap.operand(getValue())));
+    }
+
+    @Override
+    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
+        var sqrt = value.createSMTsolverexpression(ctx, solver);
+
+        return switch (sqrt) {
+            case SmtRepresentation.FloatRepresentation(var x) ->
+                    // TODO Jakub ASK
+                    new SmtRepresentation.FloatRepresentation(ctx.mkFPSqrt(ctx.mkFPRoundNearestTiesToAway(), x));
+            default -> new SmtRepresentation.UnknownRepresentation();
+        };
     }
 }
