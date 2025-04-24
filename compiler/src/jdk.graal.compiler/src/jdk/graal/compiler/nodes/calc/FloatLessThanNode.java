@@ -26,6 +26,7 @@ package jdk.graal.compiler.nodes.calc;
 
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_2;
 
+import com.microsoft.z3.BitVecExpr;
 import jdk.graal.compiler.core.common.calc.CanonicalCondition;
 import jdk.graal.compiler.core.common.type.FloatStamp;
 import jdk.graal.compiler.core.common.type.IntegerStamp;
@@ -34,9 +35,14 @@ import jdk.graal.compiler.debug.GraalError;
 import jdk.graal.compiler.graph.Node;
 import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
+import jdk.graal.compiler.nodes.FloatSmtRepresentation;
+import jdk.graal.compiler.nodes.IntegerSmtRepresentation;
 import jdk.graal.compiler.nodes.LogicConstantNode;
 import jdk.graal.compiler.nodes.LogicNode;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SmtException;
+import jdk.graal.compiler.nodes.SmtRepresentation;
+import jdk.graal.compiler.nodes.UnknownSmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
 import jdk.graal.compiler.nodes.util.GraphUtil;
@@ -131,5 +137,29 @@ public final class FloatLessThanNode extends CompareNode {
     @Override
     public TriState tryFold(Stamp xStampGeneric, Stamp yStampGeneric) {
         return TriState.UNKNOWN;
+    }
+
+    @Override
+    public SmtRepresentation<?> createSMTsolverexpression() {
+        var left = x.createSMTsolverexpression();
+        var right = y.createSMTsolverexpression();
+
+        if (left instanceof UnknownSmtRepresentation || right instanceof UnknownSmtRepresentation) {
+            return new UnknownSmtRepresentation();
+        }
+
+        var ctx = left.getContext();
+
+        return switch (left) {
+            case FloatSmtRepresentation repr -> {
+                var leftExpr = repr.getExpression();
+                var rightExpr = ((FloatSmtRepresentation) right).getExpression();
+                var newExpr = (BitVecExpr) ctx.mkITE(ctx.mkFPLt(leftExpr, rightExpr),
+                        IntegerSmtRepresentation.exprFromBool(true),
+                        IntegerSmtRepresentation.exprFromBool(false));
+                yield new IntegerSmtRepresentation(newExpr);
+            }
+            default -> throw new SmtException(left.toString(), right.toString());
+        };
     }
 }

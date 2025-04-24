@@ -553,46 +553,4 @@ public final class ConstantNode extends FloatingNode implements LIRLowerable, Ar
         }
         return ConstantNode.forInt(length);
     }
-
-    @Override
-    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
-        return switch (stamp) {
-            case IntegerStamp integerStamp: {
-                int bitWidth = integerStamp.getBits();
-                long minValue = integerStamp.lowerBound();
-                long maxValue = integerStamp.upperBound();
-
-                long mustBeSet = integerStamp.mustBeSet();
-                long mayBeSet = integerStamp.mayBeSet();
-
-                ctx.mkBitVecSort(bitWidth);
-
-                assert this.asJavaConstant() != null;
-                var bitVecValue = ctx.mkBV(this.asJavaConstant().asLong(), bitWidth);
-                SmtRepresentation.IntegerRepresentation.bitVectors.add(bitVecValue);
-
-                BitVecExpr minValueExpr = ctx.mkBV(minValue, bitWidth);
-                BitVecExpr maxValueExpr = ctx.mkBV(maxValue, bitWidth);
-                BoolExpr withinBounds = ctx.mkAnd(
-                        ctx.mkBVSLE(minValueExpr, bitVecValue),
-                        ctx.mkBVSLE(bitVecValue, maxValueExpr)
-                );
-
-                BitVecExpr mustBeSetExpr = ctx.mkBV(mustBeSet, bitWidth);
-                BoolExpr mustBeSetConstraint = ctx.mkEq(
-                        ctx.mkBVAND(bitVecValue, mustBeSetExpr),
-                        mustBeSetExpr
-                );
-
-                BoolExpr allConstraints = ctx.mkAnd(withinBounds, mustBeSetConstraint);
-                solver.add(allConstraints);
-                yield new SmtRepresentation.IntegerRepresentation(bitVecValue);
-
-            }
-            // TODO: More stamp types.
-            default: {
-                yield null;
-            }
-        };
-    }
 }

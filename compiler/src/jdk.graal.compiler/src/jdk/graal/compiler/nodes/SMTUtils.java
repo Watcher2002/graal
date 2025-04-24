@@ -3,10 +3,14 @@ package jdk.graal.compiler.nodes;
 import com.microsoft.z3.BitVecExpr;
 import com.microsoft.z3.Context;
 import com.microsoft.z3.FPExpr;
+import com.microsoft.z3.FPRMExpr;
+import com.microsoft.z3.FPRMSort;
 import com.microsoft.z3.FPSort;
 import jdk.graal.compiler.debug.DebugOptions;
 import jdk.graal.compiler.graph.Graph;
 import org.graalvm.collections.Pair;
+
+import java.math.MathContext;
 
 public class SMTUtils {
     public static boolean breakCanonicalization(String name, Graph graph){
@@ -17,6 +21,12 @@ public class SMTUtils {
         }
         return false;
     }
+
+    public static FPRMExpr getRoundingMode(Context context) {
+        return context.mkFPRoundNearestTiesToEven();
+    }
+
+
 
     public static Pair<BitVecExpr, BitVecExpr> normalizeBitVecSortSize(Context ctx, BitVecExpr expr1, BitVecExpr expr2) {
         var size1 = expr1.getSortSize();

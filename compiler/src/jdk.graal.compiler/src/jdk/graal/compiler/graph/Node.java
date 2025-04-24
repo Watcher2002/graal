@@ -41,6 +41,7 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import jdk.graal.compiler.nodes.SmtRepresentation;
+import jdk.graal.compiler.nodes.UnknownSmtRepresentation;
 import org.graalvm.collections.EconomicSet;
 
 import jdk.graal.compiler.core.common.Fields;
@@ -63,7 +64,6 @@ import jdk.graal.compiler.nodes.spi.Simplifiable;
 import jdk.graal.compiler.options.OptionValues;
 import jdk.graal.compiler.serviceprovider.GraalServices;
 import jdk.internal.misc.Unsafe;
-import com.microsoft.z3.*;
 
 /**
  * This class is the base class for all nodes. It represents a node that can be inserted in a
@@ -1859,8 +1859,8 @@ public abstract class Node implements Cloneable, Formattable {
     /**
      * Node subclasses should override this method to specify how to add them to SMT solver.
      */
-    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
-        return new SmtRepresentation.UnknownRepresentation();
+    public SmtRepresentation<?> createSMTsolverexpression() {
+        return new UnknownSmtRepresentation();
     };
 
 }

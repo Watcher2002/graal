@@ -28,8 +28,6 @@ import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_2;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
 import com.microsoft.z3.BitVecExpr;
-import com.microsoft.z3.Context;
-import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp.Abs;
@@ -37,9 +35,13 @@ import jdk.graal.compiler.core.common.type.IntegerStamp;
 import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
+import jdk.graal.compiler.nodes.FloatSmtRepresentation;
+import jdk.graal.compiler.nodes.IntegerSmtRepresentation;
 import jdk.graal.compiler.nodes.NodeView;
 import jdk.graal.compiler.nodes.SMTUtils;
+import jdk.graal.compiler.nodes.SmtException;
 import jdk.graal.compiler.nodes.SmtRepresentation;
+import jdk.graal.compiler.nodes.UnknownSmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.ArithmeticLIRLowerable;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
@@ -129,21 +131,30 @@ public final class AbsNode extends UnaryArithmeticNode<Abs> implements Arithmeti
     }
 
     @Override
-    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
-        var absValue = value.createSMTsolverexpression(ctx, solver);
+    public SmtRepresentation<?> createSMTsolverexpression() {
+        var absValue = value.createSMTsolverexpression();
+        var ctx = absValue.getContext();
 
         return switch (absValue) {
-            case SmtRepresentation.IntegerRepresentation(var x): {
-                yield new SmtRepresentation.IntegerRepresentation((BitVecExpr) ctx.mkITE(
+            case IntegerSmtRepresentation repr: {
+                var x = repr.getExpression();
+                var expr = (BitVecExpr) ctx.mkITE(
                         ctx.mkBVSLT(x, ctx.mkBV(0, x.getSortSize())),
                         ctx.mkBVNeg(x),
                         x
-                ));
+                );
+
+                repr.setExpression(expr);
+                yield repr;
             }
-            case SmtRepresentation.FloatRepresentation(var x):
-                yield new SmtRepresentation.FloatRepresentation(ctx.mkFPAbs(x));
-            case SmtRepresentation.UnknownRepresentation():
-                yield absValue;
+            case FloatSmtRepresentation repr:
+                var x = repr.getExpression();
+                repr.setExpression(ctx.mkFPAbs(x));
+                yield repr;
+            case UnknownSmtRepresentation repr:
+                yield repr;
+            default:
+                throw new SmtException(absValue.toString());
         };
     }
 }

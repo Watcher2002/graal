@@ -1694,19 +1694,4 @@ public final class FloatStamp extends PrimitiveStamp {
         private static final FloatStamp FLOAT_NAN = new FloatStamp(Float.SIZE, Double.NaN, Double.NaN, false);
         private static final FloatStamp DOUBLE_NAN = new FloatStamp(Double.SIZE, Double.NaN, Double.NaN, false);
     }
-
-    public SmtRepresentation createBVRepresentation(Context ctx, Solver solver, Node node) {
-        var sort = SMTUtils.getFPSort(ctx, getBits());
-        FPExpr fp = (FPExpr) ctx.mkConst(node.toString(), sort);
-
-        var minValue = ctx.mkFP(lowerBound, sort);
-        var maxValue = ctx.mkFP(upperBound, sort);
-
-        solver.add(ctx.mkAnd(
-                ctx.mkFPLEq(minValue, fp),
-                ctx.mkFPLEq(fp, maxValue)
-        ));
-
-        return new SmtRepresentation.FloatRepresentation(fp);
-    }
 }

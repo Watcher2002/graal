@@ -84,7 +84,7 @@ public final class ReturnNode extends MemoryMapControlSinkNode implements LIRLow
     }
 
 //    @Override
-//    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
+//    public SmtRepresentation<?>createSMTsolverexpression(Context ctx, Solver solver) {
 //        var list = new ArrayList<SmtRepresentation>();
 //        for (Node node: inputs()) {
 //            var value = node.createSMTsolverexpression(ctx, solver);

@@ -27,15 +27,15 @@ package jdk.graal.compiler.nodes.calc;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_1;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
-import com.microsoft.z3.Context;
-import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp.Not;
 import jdk.graal.compiler.core.common.type.Stamp;
 import jdk.graal.compiler.graph.NodeClass;
+import jdk.graal.compiler.nodes.IntegerSmtRepresentation;
 import jdk.graal.compiler.nodes.NodeView;
 import jdk.graal.compiler.nodes.SmtRepresentation;
+import jdk.graal.compiler.nodes.UnknownSmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.ArithmeticLIRLowerable;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
@@ -99,15 +99,21 @@ public final class NotNode extends UnaryArithmeticNode<Not> implements Arithmeti
     }
 
     @Override
-    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
-        var negated = value.createSMTsolverexpression(ctx, solver);
+    public SmtRepresentation<?> createSMTsolverexpression() {
+        var negated = value.createSMTsolverexpression();
+        var ctx = negated.getContext();
 
         return switch (negated) {
-            case SmtRepresentation.IntegerRepresentation(var x): {
-                yield new SmtRepresentation.IntegerRepresentation(ctx.mkBVNot(x));
+            case IntegerSmtRepresentation repr: {
+                var x = repr.getExpression();
+                repr.setExpression(ctx.mkBVNot(x));
+                yield repr;
+            }
+            case UnknownSmtRepresentation repr: {
+                yield repr;
             }
             default:
-                yield new SmtRepresentation.UnknownRepresentation();
+                throw new IllegalStateException("Unknown SMT Representation type: " + negated);
         };
     }
 }

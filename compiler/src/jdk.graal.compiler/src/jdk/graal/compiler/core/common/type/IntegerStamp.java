@@ -2637,34 +2637,4 @@ public final class IntegerStamp extends PrimitiveStamp {
             unrestrictedStamps[logBits] = new IntegerStamp(1 << logBits, false);
         }
     }
-
-    public SmtRepresentation createBVRepresentation(Context ctx, Solver solver, Node node) {
-        int bitWidth = getBits();
-        long minValue = lowerBound();
-        long maxValue = upperBound();
-
-        long mustBeSet = mustBeSet();
-
-        ctx.mkBitVecSort(bitWidth);
-
-        var bitVecValue = ctx.mkBVConst(node.toString(), bitWidth);
-        SmtRepresentation.IntegerRepresentation.bitVectors.add(bitVecValue);
-
-        BitVecExpr minValueExpr = ctx.mkBV(minValue, bitWidth);
-        BitVecExpr maxValueExpr = ctx.mkBV(maxValue, bitWidth);
-        BoolExpr withinBounds = ctx.mkAnd(
-                ctx.mkBVSLE(minValueExpr, bitVecValue),
-                ctx.mkBVSLE(bitVecValue, maxValueExpr)
-        );
-
-        BitVecExpr mustBeSetExpr = ctx.mkBV(mustBeSet, bitWidth);
-        BoolExpr mustBeSetConstraint = ctx.mkEq(
-                ctx.mkBVAND(bitVecValue, mustBeSetExpr),
-                mustBeSetExpr
-        );
-
-        BoolExpr allConstraints = ctx.mkAnd(withinBounds, mustBeSetConstraint);
-        solver.add(allConstraints);
-        return new SmtRepresentation.IntegerRepresentation(bitVecValue);
-    }
 }

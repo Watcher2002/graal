@@ -26,8 +26,6 @@ package jdk.graal.compiler.nodes.calc;
 
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_1;
 
-import com.microsoft.z3.Context;
-import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.calc.CanonicalCondition;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.IntegerConvertOp;
@@ -39,8 +37,11 @@ import jdk.graal.compiler.debug.GraalError;
 import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
+import jdk.graal.compiler.nodes.IntegerSmtRepresentation;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SmtException;
 import jdk.graal.compiler.nodes.SmtRepresentation;
+import jdk.graal.compiler.nodes.UnknownSmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
 import jdk.graal.compiler.nodes.spi.NodeLIRBuilderTool;
@@ -214,13 +215,18 @@ public final class NarrowNode extends IntegerConvertNode<Narrow> {
     }
 
     @Override
-    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
-        var node = value.createSMTsolverexpression(ctx, solver);
+    public SmtRepresentation<?> createSMTsolverexpression() {
+        var node = value.createSMTsolverexpression();
+        var ctx = node.getContext();
 
         return switch (node) {
-            case SmtRepresentation.IntegerRepresentation(var x) ->
-                    new SmtRepresentation.IntegerRepresentation(ctx.mkExtract(resultBits - 1, 0, x));
-            default -> new SmtRepresentation.UnknownRepresentation();
+            case IntegerSmtRepresentation repr -> {
+                var expr = repr.getExpression();
+                repr.setExpression(ctx.mkExtract(resultBits - 1, 0, expr));
+                yield repr;
+            }
+            case UnknownSmtRepresentation repr -> repr;
+            default -> throw new SmtException(node.toString());
         };
     }
 }

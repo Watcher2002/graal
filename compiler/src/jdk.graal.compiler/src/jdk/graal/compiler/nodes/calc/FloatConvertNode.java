@@ -39,9 +39,12 @@ import jdk.graal.compiler.debug.GraalError;
 import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
+import jdk.graal.compiler.nodes.FloatSmtRepresentation;
+import jdk.graal.compiler.nodes.IntegerSmtRepresentation;
 import jdk.graal.compiler.nodes.NodeView;
 import jdk.graal.compiler.nodes.SMTUtils;
 import jdk.graal.compiler.nodes.SmtRepresentation;
+import jdk.graal.compiler.nodes.UnknownSmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.ArithmeticLIRLowerable;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
@@ -166,14 +169,23 @@ public final class FloatConvertNode extends UnaryArithmeticNode<FloatConvertOp> 
     }
 
     @Override
-    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
-        var conv = value.createSMTsolverexpression(ctx, solver);
+    public SmtRepresentation<?> createSMTsolverexpression() {
+        var conv = value.createSMTsolverexpression();
+        var ctx = conv.getContext();
+
         return switch (conv) {
-            case SmtRepresentation.FloatRepresentation(var x) -> // TODO Jakub ASK
-                    new SmtRepresentation.IntegerRepresentation(ctx.mkFPToBV(ctx.mkFPRoundNearestTiesToAway(), x, x.getEBits() + x.getSBits(), true));
-            case SmtRepresentation.IntegerRepresentation(var x) ->
-                    new SmtRepresentation.FloatRepresentation(SMTUtils.BV2FP(ctx, x));
-            case SmtRepresentation.UnknownRepresentation() -> conv;
+            case FloatSmtRepresentation repr -> {// TODO Jakub ASK
+                var expr = repr.getExpression();
+                var newExpr = ctx.mkFPToBV(ctx.mkFPRoundNearestTiesToAway(), expr, expr.getEBits() + expr.getSBits(), true);
+                yield new IntegerSmtRepresentation(newExpr);
+            }
+            case IntegerSmtRepresentation repr -> {
+                var expr = repr.getExpression();
+                var newExpr = SMTUtils.BV2FP(ctx, expr);
+                yield new FloatSmtRepresentation(newExpr);
+            }
+            case UnknownSmtRepresentation repr -> repr;
+            default -> throw new IllegalStateException("Unknown SMT Representation type: " + conv);
         };
     }
 }

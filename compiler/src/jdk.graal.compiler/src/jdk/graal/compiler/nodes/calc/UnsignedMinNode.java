@@ -82,30 +82,4 @@ public class UnsignedMinNode extends MinMaxNode<UMin> {
         }
         return super.isNarrowable(resultBits, Signedness.UNSIGNED);
     }
-
-//    @Override
-//    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
-//        var left = x.createSMTsolverexpression(ctx, solver);
-//        var right = y.createSMTsolverexpression(ctx, solver);
-//
-//        if (left == null || right == null || !left.getClass().equals(right.getClass())) {
-//            return null;
-//        }
-//
-//        return switch (left) {
-//            case SmtRepresentation.IntegerRepresentation(var leftBV): {
-//                var rightBV = ((SmtRepresentation.IntegerRepresentation) right).value();
-//                var normalized = ((SmtRepresentation.IntegerRepresentation) left).normalizeBitVecSortSize(ctx, leftBV, rightBV);
-//                leftBV = normalized.getLeft();
-//                rightBV = normalized.getRight();
-//
-//                var expression = (BitVecExpr) ctx.mkITE(
-//                        ctx.mkBVSLE(leftBV, rightBV),
-//                        leftBV,
-//                        rightBV
-//                );
-//                yield new SmtRepresentation.IntegerRepresentation(expression);
-//            }
-//        };
-//    }
 }

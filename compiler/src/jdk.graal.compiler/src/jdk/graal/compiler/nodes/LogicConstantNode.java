@@ -98,4 +98,9 @@ public final class LogicConstantNode extends LIRLowerableLogicNode implements LI
     public boolean getValue() {
         return value;
     }
+
+    @Override
+    public SmtRepresentation<?> createSMTsolverexpression() {
+        return IntegerSmtRepresentation.fromLogical(value);
+    }
 }

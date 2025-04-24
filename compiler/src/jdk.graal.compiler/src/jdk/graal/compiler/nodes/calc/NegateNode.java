@@ -27,8 +27,6 @@ package jdk.graal.compiler.nodes.calc;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_2;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
-import com.microsoft.z3.Context;
-import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp.Neg;
@@ -36,9 +34,12 @@ import jdk.graal.compiler.core.common.type.IntegerStamp;
 import jdk.graal.compiler.core.common.type.FloatStamp;
 import jdk.graal.compiler.core.common.type.Stamp;
 import jdk.graal.compiler.graph.NodeClass;
+import jdk.graal.compiler.nodes.FloatSmtRepresentation;
+import jdk.graal.compiler.nodes.IntegerSmtRepresentation;
 import jdk.graal.compiler.nodes.NodeView;
 import jdk.graal.compiler.nodes.SMTUtils;
 import jdk.graal.compiler.nodes.SmtRepresentation;
+import jdk.graal.compiler.nodes.UnknownSmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
 import jdk.graal.compiler.nodes.spi.NodeLIRBuilderTool;
@@ -88,7 +89,7 @@ public class NegateNode extends UnaryArithmeticNode<Neg> implements NarrowableAr
     }
 
     protected static ValueNode findSynonym(ValueNode forValue, NodeView view) {
-        ArithmeticOpTable.UnaryOp<Neg> negOp = ArithmeticOpTable.forStamp(forValue.stamp(view)).getNeg();
+        UnaryOp<Neg> negOp = ArithmeticOpTable.forStamp(forValue.stamp(view)).getNeg();
 
         // Folds constants
         ValueNode synonym = UnaryArithmeticNode.findSynonym(forValue, negOp);
@@ -127,17 +128,25 @@ public class NegateNode extends UnaryArithmeticNode<Neg> implements NarrowableAr
     }
 
     @Override
-    public SmtRepresentation createSMTsolverexpression(Context ctx, Solver solver) {
-        var negateValue = value.createSMTsolverexpression(ctx, solver);
+    public SmtRepresentation<?> createSMTsolverexpression() {
+        var negateValue = value.createSMTsolverexpression();
+        var ctx = negateValue.getContext();
 
         return switch (negateValue) {
-            case SmtRepresentation.IntegerRepresentation(var x): {
-                yield new SmtRepresentation.IntegerRepresentation(ctx.mkBVNeg(x));
+            case IntegerSmtRepresentation repr: {
+                var x = repr.getExpression();
+                repr.setExpression(ctx.mkBVNeg(x));
+                yield repr;
             }
-            case SmtRepresentation.FloatRepresentation(var x):
-                yield new SmtRepresentation.FloatRepresentation(ctx.mkFPNeg(x));
-            case SmtRepresentation.UnknownRepresentation():
-                yield new SmtRepresentation.UnknownRepresentation();
+            case FloatSmtRepresentation repr: {
+                var x = repr.getExpression();
+                repr.setExpression(ctx.mkFPNeg(x));
+                yield repr;
+            }
+            case UnknownSmtRepresentation repr:
+                yield repr;
+            default:
+                throw new IllegalStateException("Unknown SMT Representation type: " + negateValue);
         };
     }
 }
