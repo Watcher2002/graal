@@ -26,7 +26,13 @@ public class SMTUtils {
         return context.mkFPRoundNearestTiesToEven();
     }
 
-
+    public static SmtRepresentation<?> getRepresentationOfReturnNode(Graph graph) {
+        var nodes = graph.getNodes().filter(x -> x instanceof ReturnNode).stream().toList();
+        if (nodes.size() == 1) {
+            return nodes.getFirst().createSMTsolverexpression();
+        }
+        return new UnknownSmtRepresentation();
+    }
 
     public static Pair<BitVecExpr, BitVecExpr> normalizeBitVecSortSize(Context ctx, BitVecExpr expr1, BitVecExpr expr2) {
         var size1 = expr1.getSortSize();

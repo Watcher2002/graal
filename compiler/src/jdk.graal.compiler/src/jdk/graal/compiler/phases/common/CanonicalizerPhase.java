@@ -29,19 +29,15 @@ import static jdk.graal.compiler.phases.common.CanonicalizerPhase.CanonicalizerF
 import static jdk.graal.compiler.phases.common.CanonicalizerPhase.CanonicalizerFeature.GVN;
 import static jdk.graal.compiler.phases.common.CanonicalizerPhase.CanonicalizerFeature.READ_CANONICALIZATION;
 
-import java.io.BufferedWriter;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.util.EnumSet;
-import java.util.HashMap;
 import java.util.Objects;
 import java.util.Optional;
 
-import com.microsoft.z3.Context;
-import com.microsoft.z3.Expr;
+import com.microsoft.z3.Model;
 import com.microsoft.z3.Status;
 import jdk.graal.compiler.nodes.SMTUtils;
-import jdk.graal.compiler.nodes.SmtRepresentation;
+import jdk.graal.compiler.nodes.SmtException;
 import org.graalvm.collections.EconomicSet;
 
 import jdk.graal.compiler.core.common.type.Stamp;
@@ -97,6 +93,7 @@ import jdk.graal.compiler.options.OptionValues;
 import jdk.graal.compiler.phases.BasePhase;
 import jdk.vm.ci.meta.Assumptions;
 import jdk.vm.ci.meta.Constant;
+import org.graalvm.collections.Pair;
 
 public class CanonicalizerPhase extends BasePhase<CoreProviders> {
 
@@ -578,6 +575,8 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
     @SuppressWarnings("try")
     public boolean tryCanonicalize(final Node node, NodeClass<?> nodeClass, Tool tool) {
         try (DebugCloseable position = node.withNodeSourcePosition(); DebugContext.Scope scope = tool.debug.withContext(node)) {
+            var originalReturnNode = SMTUtils.getRepresentationOfReturnNode(node.graph());
+
             if (nodeClass.isCanonicalizable()) {
                 COUNTER_CANONICALIZATION_CONSIDERED_NODES.increment(tool.debug);
                 Node canonical = node;
@@ -596,6 +595,7 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                     graph.getOptimizationLog().withLazyProperty("replacedNodeClass", nodeClass::shortName).withLazyProperty("canonicalNodeClass",
                                     () -> (finalCanonical == null) ? null : finalCanonical.getNodeClass().shortName()).report(DebugContext.VERY_DETAILED_LEVEL, CanonicalizerPhase.class,
                                                     "CanonicalReplacement", node);
+                    smtComparisonEvaluation(originalReturnNode.compare(SMTUtils.getRepresentationOfReturnNode(graph)), tool);
                     return true;
                 }
             }
@@ -610,6 +610,7 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                     if (node.isDeleted() || modCount != node.graph().getEdgeModificationCount()) {
                         StructuredGraph graph = (StructuredGraph) node.graph();
                         graph.getOptimizationLog().report(DebugContext.VERY_DETAILED_LEVEL, CanonicalizerPhase.class, "CfgSimplificationCustom", node);
+                        smtComparisonEvaluation(originalReturnNode.compare(SMTUtils.getRepresentationOfReturnNode(graph)), tool);
                         return true;
                     }
                 }
@@ -622,6 +623,7 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                     if (node.isDeleted() || modCount != node.graph().getEdgeModificationCount()) {
                         StructuredGraph graph = (StructuredGraph) node.graph();
                         graph.getOptimizationLog().report(DebugContext.VERY_DETAILED_LEVEL, CanonicalizerPhase.class, "CfgSimplification", node);
+                        smtComparisonEvaluation(originalReturnNode.compare(SMTUtils.getRepresentationOfReturnNode(graph)), tool);
                         return true;
                     }
                 }
@@ -884,16 +886,21 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
         var canonicalized = canonical.createSMTsolverexpression();
 
         var comparison = original.compare(canonicalized);
+        smtComparisonEvaluation(comparison, tool);
+    }
 
-        if (comparison == null) {
+    private void smtComparisonEvaluation(Pair<Status, Pair<Model, String>> comparisonResult, Tool tool) {
+        if (comparisonResult == null) {
             return;
         }
 
-        var status = comparison.getLeft();
+        var status = comparisonResult.getLeft();
 
         if (status == Status.SATISFIABLE) {
             tool.debug.log("Canonicalization is incorrect.");
-            throw new RuntimeException("Canonicalization is incorrect. Example: " + comparison.getRight());
+            var model = comparisonResult.getRight().getLeft();
+            var constraints = comparisonResult.getRight().getRight();
+            throw new SmtException("Canonicalization is incorrect. Constraints: " + constraints + System.lineSeparator() + "Params: " + model + System.lineSeparator());
         } else if (status == Status.UNSATISFIABLE) {
             tool.debug.log("Canonicalization is correct.");
         } else {

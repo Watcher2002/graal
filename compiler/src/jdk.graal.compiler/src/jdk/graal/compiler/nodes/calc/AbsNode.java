@@ -144,13 +144,12 @@ public final class AbsNode extends UnaryArithmeticNode<Abs> implements Arithmeti
                         x
                 );
 
-                repr.setExpression(expr);
-                yield repr;
+                yield new IntegerSmtRepresentation(expr, repr);
             }
             case FloatSmtRepresentation repr:
                 var x = repr.getExpression();
-                repr.setExpression(ctx.mkFPAbs(x));
-                yield repr;
+                var expr = ctx.mkFPAbs(x);
+                yield new FloatSmtRepresentation(expr, repr);
             case UnknownSmtRepresentation repr:
                 yield repr;
             default:

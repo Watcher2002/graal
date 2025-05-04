@@ -226,8 +226,8 @@ public class MulNode extends BinaryArithmeticNode<Mul> implements NarrowableArit
             case IntegerSmtRepresentation repr -> {
                 var leftExpr = repr.getExpression();
                 var rightExpr = ((IntegerSmtRepresentation) right).getExpression();
-                repr.setExpression(ctx.mkBVMul(leftExpr, rightExpr));
-                yield repr;
+                var expr = ctx.mkBVMul(leftExpr, rightExpr);
+                yield new IntegerSmtRepresentation(expr, repr, (IntegerSmtRepresentation) right);
             }
             default -> throw new SmtException(left.toString(), right.toString());
         };

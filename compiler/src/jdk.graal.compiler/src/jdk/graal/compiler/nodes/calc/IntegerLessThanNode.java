@@ -362,7 +362,7 @@ public final class IntegerLessThanNode extends IntegerLowerThanNode {
                 var newExpr = (BitVecExpr) ctx.mkITE(ctx.mkBVSLT(leftExpr, rightExpr),
                         IntegerSmtRepresentation.exprFromBool(true),
                         IntegerSmtRepresentation.exprFromBool(false));
-                yield new IntegerSmtRepresentation(newExpr);
+                yield new IntegerSmtRepresentation(newExpr, repr, (IntegerSmtRepresentation) right);
             }
             default -> throw new SmtException(left.toString(), right.toString());
         };

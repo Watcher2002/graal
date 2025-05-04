@@ -106,8 +106,8 @@ public final class NotNode extends UnaryArithmeticNode<Not> implements Arithmeti
         return switch (negated) {
             case IntegerSmtRepresentation repr: {
                 var x = repr.getExpression();
-                repr.setExpression(ctx.mkBVNot(x));
-                yield repr;
+                var expr = ctx.mkBVNot(x);
+                yield new IntegerSmtRepresentation(expr, repr);
             }
             case UnknownSmtRepresentation repr: {
                 yield repr;

@@ -29,9 +29,9 @@ public class AbsIntegerCanonicalizationTest extends GraalCompilerTest {
         assertEquals(referenceGraph, graph);
         Assert.assertEquals(0, graph.getNodes().filter(NegateNode.class).count());
 
-        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absNegate(-Integer.MAX_VALUE), null), (Object) null, Integer.MAX_VALUE);
-        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absNegate(0), null), (Object) null, 0);
-        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absNegate(Integer.MAX_VALUE), null), (Object) null, Integer.MAX_VALUE);
+        testAgainstExpected(graph.method(), new Result(absNegate(-Integer.MAX_VALUE), null), (Object) null, Integer.MAX_VALUE);
+        testAgainstExpected(graph.method(), new Result(absNegate(0), null), (Object) null, 0);
+        testAgainstExpected(graph.method(), new Result(absNegate(Integer.MAX_VALUE), null), (Object) null, Integer.MAX_VALUE);
     }
 
     public static int leftShift(int x) {
@@ -44,8 +44,8 @@ public class AbsIntegerCanonicalizationTest extends GraalCompilerTest {
         createInliningPhase().apply(graph, getDefaultHighTierContext());
         createCanonicalizerPhase().apply(graph, getProviders());
 
-        assertEquals(new Result(2, null), new Result(leftShift(1), null));
-        assertEquals(new Result(4098, null), new Result(leftShift(2049), null));
+        testAgainstExpected(graph.method(), new Result(leftShift(1), null), (Object) null, 1);
+        testAgainstExpected(graph.method(), new Result(leftShift(2049), null), (Object) null, 2049);
     }
 
     @Test
@@ -58,9 +58,9 @@ public class AbsIntegerCanonicalizationTest extends GraalCompilerTest {
         assertEquals(referenceGraph, graph);
         Assert.assertEquals(1, graph.getNodes().filter(AbsNode.class).count());
 
-        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absAbs(-Integer.MAX_VALUE), null), (Object) null, Integer.MAX_VALUE);
-        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absAbs(0), null), (Object) null, 0);
-        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(absAbs(Integer.MAX_VALUE), null), (Object) null, Integer.MAX_VALUE);
+        testAgainstExpected(graph.method(), new Result(absAbs(-Integer.MAX_VALUE), null), (Object) null, Integer.MAX_VALUE);
+        testAgainstExpected(graph.method(), new Result(absAbs(0), null), (Object) null, 0);
+        testAgainstExpected(graph.method(), new Result(absAbs(Integer.MAX_VALUE), null), (Object) null, Integer.MAX_VALUE);
     }
 
     public static double signum(int x) {
@@ -73,8 +73,8 @@ public class AbsIntegerCanonicalizationTest extends GraalCompilerTest {
         createInliningPhase().apply(graph, getDefaultHighTierContext());
         createCanonicalizerPhase().apply(graph, getProviders());
 
-        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(signum(0), null), (Object) null, 0);
-        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(signum(Integer.MAX_VALUE), null), (Object) null, 1);
-        testAgainstExpected(graph.method(), new GraalCompilerTest.Result(signum(Integer.MIN_VALUE), null), (Object) null, -1);
+        testAgainstExpected(graph.method(), new Result(signum(0), null), (Object) null, 0);
+        testAgainstExpected(graph.method(), new Result(signum(1), null), (Object) null, 1);
+        testAgainstExpected(graph.method(), new Result(signum(-1), null), (Object) null, -1);
     }
 }

@@ -140,8 +140,8 @@ public final class OrNode extends BinaryArithmeticNode<Or> implements Canonicali
             case IntegerSmtRepresentation repr -> {
                 var leftExpr = repr.getExpression();
                 var rightExpr = ((IntegerSmtRepresentation) right).getExpression();
-                repr.setExpression(ctx.mkBVOR(leftExpr, rightExpr));
-                yield repr;
+                var expr = ctx.mkBVOR(leftExpr, rightExpr);
+                yield new IntegerSmtRepresentation(expr, repr, (IntegerSmtRepresentation) right);
             }
             default -> throw new SmtException(left.toString(), right.toString());
         };

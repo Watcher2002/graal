@@ -135,13 +135,13 @@ public class NegateNode extends UnaryArithmeticNode<Neg> implements NarrowableAr
         return switch (negateValue) {
             case IntegerSmtRepresentation repr: {
                 var x = repr.getExpression();
-                repr.setExpression(ctx.mkBVNeg(x));
-                yield repr;
+                var expr = ctx.mkBVNeg(x);
+                yield new IntegerSmtRepresentation(expr, repr);
             }
             case FloatSmtRepresentation repr: {
                 var x = repr.getExpression();
-                repr.setExpression(ctx.mkFPNeg(x));
-                yield repr;
+                var expr = ctx.mkFPNeg(x);
+                yield new FloatSmtRepresentation(expr, repr);
             }
             case UnknownSmtRepresentation repr:
                 yield repr;

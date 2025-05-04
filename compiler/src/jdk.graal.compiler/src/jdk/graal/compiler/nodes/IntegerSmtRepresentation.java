@@ -10,13 +10,19 @@ public class IntegerSmtRepresentation extends SmtRepresentation<BitVecExpr> {
         super(expression);
     }
 
+    public IntegerSmtRepresentation(BitVecExpr expression, BoolExpr constData) {
+        super(expression, constData);
+    }
+
+    public IntegerSmtRepresentation(BitVecExpr expression, IntegerSmtRepresentation... originalRepresentations ) {
+        super(expression, originalRepresentations);
+    }
+
     public FloatSmtRepresentation toFloatSmtRepresentation(FPSort sort) {
         return new FloatSmtRepresentation(ctx.mkFPToFP(expression, sort));
     }
 
     public static IntegerSmtRepresentation fromLogical(boolean value) {
-        setupZ3();
-
         return new IntegerSmtRepresentation(exprFromBool(value));
     }
 
@@ -25,8 +31,6 @@ public class IntegerSmtRepresentation extends SmtRepresentation<BitVecExpr> {
     }
 
     public static IntegerSmtRepresentation fromStamp(IntegerStamp stamp, String nodeName) {
-        setupZ3();
-
         int bitWidth = stamp.getBits();
         long minValue = stamp.lowerBound();
         long maxValue = stamp.upperBound();
@@ -49,7 +53,6 @@ public class IntegerSmtRepresentation extends SmtRepresentation<BitVecExpr> {
         );
 
         BoolExpr allConstraints = ctx.mkAnd(withinBounds, mustBeSetConstraint);
-        solver.add(allConstraints);
-        return new IntegerSmtRepresentation(bitVecValue);
+        return new IntegerSmtRepresentation(bitVecValue, allConstraints);
     }
 }

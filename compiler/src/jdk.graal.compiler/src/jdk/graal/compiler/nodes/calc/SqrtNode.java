@@ -81,8 +81,8 @@ public final class SqrtNode extends UnaryArithmeticNode<Sqrt> implements Arithme
         return switch (sqrt) {
             case FloatSmtRepresentation repr -> {
                 var expr = repr.getExpression();
-                repr.setExpression(ctx.mkFPSqrt(SMTUtils.getRoundingMode(ctx), expr));
-                yield repr;
+                var newExpr = ctx.mkFPSqrt(SMTUtils.getRoundingMode(ctx), expr);
+                yield new FloatSmtRepresentation(newExpr, repr);
             }
             case UnknownSmtRepresentation repr -> repr;
             default -> throw new IllegalStateException("Unknown SMT Representation type: " + sqrt);

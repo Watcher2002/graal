@@ -280,8 +280,8 @@ public class AddNode extends BinaryArithmeticNode<Add> implements NarrowableArit
             case IntegerSmtRepresentation repr -> {
                 var leftExpr = repr.getExpression();
                 var rightExpr = ((IntegerSmtRepresentation) right).getExpression();
-                repr.setExpression(ctx.mkBVAdd(leftExpr, rightExpr));
-                yield repr;
+                var expr = ctx.mkBVAdd(leftExpr, rightExpr);
+                yield new IntegerSmtRepresentation(expr, repr, (IntegerSmtRepresentation) right);
             }
             default -> throw new SmtException(left.toString(), right.toString());
         };

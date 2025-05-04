@@ -187,8 +187,8 @@ public final class UnsignedRightShiftNode extends ShiftNode<UShr> {
             case IntegerSmtRepresentation repr -> {
                 var leftExpr = repr.getExpression();
                 var rightExpr = ((IntegerSmtRepresentation) right).getExpression();
-                repr.setExpression(ctx.mkBVLSHR(leftExpr, rightExpr));
-                yield repr;
+                var expr = ctx.mkBVLSHR(leftExpr, rightExpr);
+                yield new IntegerSmtRepresentation(expr, repr, (IntegerSmtRepresentation) right);
             }
             default -> throw new SmtException(left.toString(), right.toString());
         };

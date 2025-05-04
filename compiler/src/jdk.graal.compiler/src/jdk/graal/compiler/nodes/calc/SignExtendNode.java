@@ -174,8 +174,8 @@ public final class SignExtendNode extends IntegerConvertNode<SignExtend> {
         return switch (node) {
             case IntegerSmtRepresentation repr ->  {
                 var expr = repr.getExpression();
-                repr.setExpression(ctx.mkSignExt(resultBits - expr.getSortSize(), expr));
-                yield repr;
+                var newExpr = ctx.mkSignExt(resultBits - expr.getSortSize(), expr);
+                yield new IntegerSmtRepresentation(newExpr, repr);
             }
             case UnknownSmtRepresentation repr -> repr;
             default -> throw new SmtException(node.toString());

@@ -225,8 +225,8 @@ public final class AndNode extends BinaryArithmeticNode<And> implements Narrowab
             case IntegerSmtRepresentation repr -> {
                 var leftExpr = repr.getExpression();
                 var rightExpr = ((IntegerSmtRepresentation) right).getExpression();
-                repr.setExpression(ctx.mkBVAND(leftExpr, rightExpr));
-                yield repr;
+                var expr = ctx.mkBVAND(leftExpr, rightExpr);
+                yield new IntegerSmtRepresentation(expr, repr, (IntegerSmtRepresentation) right);
             }
             default -> throw new SmtException(left.toString(), right.toString());
         };

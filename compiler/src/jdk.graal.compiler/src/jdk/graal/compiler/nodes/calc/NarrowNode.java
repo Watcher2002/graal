@@ -222,8 +222,8 @@ public final class NarrowNode extends IntegerConvertNode<Narrow> {
         return switch (node) {
             case IntegerSmtRepresentation repr -> {
                 var expr = repr.getExpression();
-                repr.setExpression(ctx.mkExtract(resultBits - 1, 0, expr));
-                yield repr;
+                var newExpr = ctx.mkExtract(resultBits - 1, 0, expr);
+                yield new IntegerSmtRepresentation(newExpr, repr);
             }
             case UnknownSmtRepresentation repr -> repr;
             default -> throw new SmtException(node.toString());

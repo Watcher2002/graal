@@ -37,6 +37,7 @@ import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
 import jdk.graal.compiler.nodes.ConstantNode;
 import jdk.graal.compiler.nodes.FloatSmtRepresentation;
+import jdk.graal.compiler.nodes.IntegerSmtRepresentation;
 import jdk.graal.compiler.nodes.NodeView;
 import jdk.graal.compiler.nodes.SMTUtils;
 import jdk.graal.compiler.nodes.SmtException;
@@ -121,8 +122,7 @@ public final class SignumNode extends UnaryNode implements ArithmeticLIRLowerabl
                                 ctx.mkFP(1, sort)
                         )
                 );
-                repr.setExpression(newExpr);
-                yield repr;
+                yield new FloatSmtRepresentation(newExpr, repr);
             }
             case UnknownSmtRepresentation repr -> repr;
             default -> throw new SmtException(signum.toString());

@@ -381,7 +381,7 @@ public final class IntegerEqualsNode extends CompareNode implements Canonicaliza
                 var newExpr = (BitVecExpr) ctx.mkITE(ctx.mkEq(leftExpr, rightExpr),
                         IntegerSmtRepresentation.exprFromBool(true),
                         IntegerSmtRepresentation.exprFromBool(false));
-                yield new IntegerSmtRepresentation(newExpr);
+                yield new IntegerSmtRepresentation(newExpr, repr, (IntegerSmtRepresentation) right);
             }
             default -> throw new SmtException(left.toString(), right.toString());
         };

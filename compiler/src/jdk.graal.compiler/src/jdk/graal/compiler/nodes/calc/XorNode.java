@@ -151,8 +151,8 @@ public final class XorNode extends BinaryArithmeticNode<Xor> implements Canonica
             case IntegerSmtRepresentation repr -> {
                 var leftExpr = repr.getExpression();
                 var rightExpr = ((IntegerSmtRepresentation) right).getExpression();
-                repr.setExpression(ctx.mkBVXOR(leftExpr, rightExpr));
-                yield repr;
+                var expr = ctx.mkBVXOR(leftExpr, rightExpr);
+                yield new IntegerSmtRepresentation(expr, repr, (IntegerSmtRepresentation) right);
             }
             default -> throw new SmtException(left.toString(), right.toString());
         };

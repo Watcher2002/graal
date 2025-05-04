@@ -192,8 +192,8 @@ public final class ZeroExtendNode extends IntegerConvertNode<ZeroExtend> {
         return switch (node) {
             case IntegerSmtRepresentation repr ->  {
                 var expr = repr.getExpression();
-                repr.setExpression(ctx.mkZeroExt(resultBits - expr.getSortSize(), expr));
-                yield repr;
+                var newExpr = ctx.mkZeroExt(resultBits - expr.getSortSize(), expr);
+                yield new IntegerSmtRepresentation(newExpr, repr);
             }
             case UnknownSmtRepresentation repr -> repr;
             default -> throw new SmtException(node.toString());

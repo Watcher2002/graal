@@ -2391,4 +2391,9 @@ public final class IfNode extends ControlSplitNode implements Simplifiable, LIRL
         // unknown
         return false;
     }
+
+    @Override
+    public SmtRepresentation<?> createSMTsolverexpression() {
+        return condition.createSMTsolverexpression();
+    }
 }

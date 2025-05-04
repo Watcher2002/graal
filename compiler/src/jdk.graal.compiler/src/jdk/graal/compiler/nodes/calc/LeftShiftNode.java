@@ -199,8 +199,8 @@ public final class LeftShiftNode extends ShiftNode<Shl> {
             case IntegerSmtRepresentation repr -> {
                 var leftExpr = repr.getExpression();
                 var rightExpr = ((IntegerSmtRepresentation) right).getExpression();
-                repr.setExpression(ctx.mkBVSHL(leftExpr, rightExpr));
-                yield repr;
+                var expr = ctx.mkBVSHL(leftExpr, rightExpr);
+                yield new IntegerSmtRepresentation(expr, repr, (IntegerSmtRepresentation) right);
             }
             default -> throw new SmtException(left.toString(), right.toString());
         };
