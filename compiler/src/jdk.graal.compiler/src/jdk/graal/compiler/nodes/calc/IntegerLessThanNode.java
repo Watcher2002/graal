@@ -27,6 +27,7 @@ package jdk.graal.compiler.nodes.calc;
 import static jdk.graal.compiler.core.common.calc.CanonicalCondition.LT;
 
 import com.microsoft.z3.BitVecExpr;
+import com.microsoft.z3.Context;
 import jdk.graal.compiler.core.common.GraalOptions;
 import jdk.graal.compiler.core.common.NumUtil;
 import jdk.graal.compiler.core.common.calc.CanonicalCondition;
@@ -345,24 +346,22 @@ public final class IntegerLessThanNode extends IntegerLowerThanNode {
     }
 
     @Override
-    public SmtRepresentation<?> createSMTsolverexpression() {
-        var left = x.createSMTsolverexpression();
-        var right = y.createSMTsolverexpression();
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var left = x.createSMTsolverexpression(ctx);
+        var right = y.createSMTsolverexpression(ctx);
 
         if (left instanceof UnknownSmtRepresentation || right instanceof UnknownSmtRepresentation) {
-            return new UnknownSmtRepresentation();
+            return new UnknownSmtRepresentation(this);
         }
-
-        var ctx = left.getContext();
 
         return switch (left) {
             case IntegerSmtRepresentation repr -> {
                 var leftExpr = repr.getExpression();
                 var rightExpr = ((IntegerSmtRepresentation) right).getExpression();
                 var newExpr = (BitVecExpr) ctx.mkITE(ctx.mkBVSLT(leftExpr, rightExpr),
-                        IntegerSmtRepresentation.exprFromBool(true),
-                        IntegerSmtRepresentation.exprFromBool(false));
-                yield new IntegerSmtRepresentation(newExpr, repr, (IntegerSmtRepresentation) right);
+                        IntegerSmtRepresentation.exprFromBool(true, ctx),
+                        IntegerSmtRepresentation.exprFromBool(false, ctx));
+                yield new IntegerSmtRepresentation(newExpr, ctx, repr, (IntegerSmtRepresentation) right);
             }
             default -> throw new SmtException(left.toString(), right.toString());
         };

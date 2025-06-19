@@ -1,23 +1,24 @@
 package jdk.graal.compiler.nodes;
 
 import com.microsoft.z3.BoolExpr;
+import com.microsoft.z3.Context;
 import com.microsoft.z3.FPExpr;
 import jdk.graal.compiler.core.common.type.FloatStamp;
 
 public class FloatSmtRepresentation extends SmtRepresentation<FPExpr> {
-    public FloatSmtRepresentation(FPExpr expression) {
-        super(expression);
+    public FloatSmtRepresentation(FPExpr expression, Context ctx) {
+        super(expression, ctx);
     }
 
-    public FloatSmtRepresentation(FPExpr expression, BoolExpr constantConstraint) {
-        super(expression, constantConstraint);
+    public FloatSmtRepresentation(FPExpr expression, Context ctx, BoolExpr constantConstraint) {
+        super(expression, ctx, constantConstraint);
     }
 
-    public FloatSmtRepresentation(FPExpr expression, FloatSmtRepresentation... representations) {
-        super(expression, representations);
+    public FloatSmtRepresentation(FPExpr expression, Context ctx,  FloatSmtRepresentation... representations) {
+        super(expression, ctx, representations);
     }
 
-    public static FloatSmtRepresentation fromStamp(FloatStamp stamp, String nodeName) {
+    public static FloatSmtRepresentation fromStamp(FloatStamp stamp, Context ctx, String nodeName) {
         var sort = SMTUtils.getFPSort(ctx, stamp.getBits());
         FPExpr fp = (FPExpr) ctx.mkConst(nodeName, sort);
 
@@ -30,6 +31,6 @@ public class FloatSmtRepresentation extends SmtRepresentation<FPExpr> {
         );
 
 
-        return new FloatSmtRepresentation(fp, expr);
+        return new FloatSmtRepresentation(fp, ctx, expr);
     }
 }

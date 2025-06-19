@@ -27,6 +27,7 @@ package jdk.graal.compiler.nodes.calc;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_2;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
+import com.microsoft.z3.Context;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp.Neg;
@@ -128,20 +129,19 @@ public class NegateNode extends UnaryArithmeticNode<Neg> implements NarrowableAr
     }
 
     @Override
-    public SmtRepresentation<?> createSMTsolverexpression() {
-        var negateValue = value.createSMTsolverexpression();
-        var ctx = negateValue.getContext();
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var negateValue = value.createSMTsolverexpression(ctx);
 
         return switch (negateValue) {
             case IntegerSmtRepresentation repr: {
                 var x = repr.getExpression();
                 var expr = ctx.mkBVNeg(x);
-                yield new IntegerSmtRepresentation(expr, repr);
+                yield new IntegerSmtRepresentation(expr, ctx, repr);
             }
             case FloatSmtRepresentation repr: {
                 var x = repr.getExpression();
                 var expr = ctx.mkFPNeg(x);
-                yield new FloatSmtRepresentation(expr, repr);
+                yield new FloatSmtRepresentation(expr, ctx, repr);
             }
             case UnknownSmtRepresentation repr:
                 yield repr;

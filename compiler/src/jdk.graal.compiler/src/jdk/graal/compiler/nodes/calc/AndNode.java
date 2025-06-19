@@ -24,6 +24,7 @@
  */
 package jdk.graal.compiler.nodes.calc;
 
+import com.microsoft.z3.Context;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.BinaryOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.BinaryOp.And;
@@ -211,22 +212,20 @@ public final class AndNode extends BinaryArithmeticNode<And> implements Narrowab
     }
 
     @Override
-    public SmtRepresentation<?> createSMTsolverexpression() {
-        var left = x.createSMTsolverexpression();
-        var right = y.createSMTsolverexpression();
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var left = x.createSMTsolverexpression(ctx);
+        var right = y.createSMTsolverexpression(ctx);
 
         if (left instanceof UnknownSmtRepresentation || right instanceof UnknownSmtRepresentation) {
-            return new UnknownSmtRepresentation();
+            return new UnknownSmtRepresentation(this);
         }
-
-        var ctx = left.getContext();
 
         return switch (left) {
             case IntegerSmtRepresentation repr -> {
                 var leftExpr = repr.getExpression();
                 var rightExpr = ((IntegerSmtRepresentation) right).getExpression();
                 var expr = ctx.mkBVAND(leftExpr, rightExpr);
-                yield new IntegerSmtRepresentation(expr, repr, (IntegerSmtRepresentation) right);
+                yield new IntegerSmtRepresentation(expr, ctx, repr, (IntegerSmtRepresentation) right);
             }
             default -> throw new SmtException(left.toString(), right.toString());
         };

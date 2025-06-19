@@ -27,6 +27,7 @@ package jdk.graal.compiler.nodes.calc;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_16;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
+import com.microsoft.z3.Context;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp.Sqrt;
@@ -74,15 +75,14 @@ public final class SqrtNode extends UnaryArithmeticNode<Sqrt> implements Arithme
     }
 
     @Override
-    public SmtRepresentation<?> createSMTsolverexpression() {
-        var sqrt = value.createSMTsolverexpression();
-        var ctx = sqrt.getContext();
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var sqrt = value.createSMTsolverexpression(ctx);
 
         return switch (sqrt) {
             case FloatSmtRepresentation repr -> {
                 var expr = repr.getExpression();
                 var newExpr = ctx.mkFPSqrt(SMTUtils.getRoundingMode(ctx), expr);
-                yield new FloatSmtRepresentation(newExpr, repr);
+                yield new FloatSmtRepresentation(newExpr, ctx, repr);
             }
             case UnknownSmtRepresentation repr -> repr;
             default -> throw new IllegalStateException("Unknown SMT Representation type: " + sqrt);

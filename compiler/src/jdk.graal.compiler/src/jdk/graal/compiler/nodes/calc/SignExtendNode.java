@@ -26,6 +26,7 @@ package jdk.graal.compiler.nodes.calc;
 
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_1;
 
+import com.microsoft.z3.Context;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.IntegerConvertOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.IntegerConvertOp.Narrow;
@@ -167,15 +168,14 @@ public final class SignExtendNode extends IntegerConvertNode<SignExtend> {
     }
 
     @Override
-    public SmtRepresentation<?> createSMTsolverexpression() {
-        var node = value.createSMTsolverexpression();
-        var ctx = node.getContext();
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var node = value.createSMTsolverexpression(ctx);
 
         return switch (node) {
             case IntegerSmtRepresentation repr ->  {
                 var expr = repr.getExpression();
                 var newExpr = ctx.mkSignExt(resultBits - expr.getSortSize(), expr);
-                yield new IntegerSmtRepresentation(newExpr, repr);
+                yield new IntegerSmtRepresentation(newExpr, ctx, repr);
             }
             case UnknownSmtRepresentation repr -> repr;
             default -> throw new SmtException(node.toString());

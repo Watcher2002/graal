@@ -31,9 +31,11 @@ import static jdk.graal.compiler.phases.common.CanonicalizerPhase.CanonicalizerF
 
 import java.io.IOException;
 import java.util.EnumSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+import com.microsoft.z3.Context;
 import com.microsoft.z3.Model;
 import com.microsoft.z3.Status;
 import jdk.graal.compiler.nodes.SMTUtils;
@@ -574,8 +576,10 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
 
     @SuppressWarnings("try")
     public boolean tryCanonicalize(final Node node, NodeClass<?> nodeClass, Tool tool) {
-        try (DebugCloseable position = node.withNodeSourcePosition(); DebugContext.Scope scope = tool.debug.withContext(node)) {
-            var originalReturnNode = SMTUtils.getRepresentationOfReturnNode(node.graph());
+        try (DebugCloseable position = node.withNodeSourcePosition();
+             DebugContext.Scope scope = tool.debug.withContext(node);
+             Context ctx = new Context(Map.of("proof", "true"))) {
+            var originalReturnNode = SMTUtils.getRepresentationOfReturnNode(node.graph(), ctx);
 
             if (nodeClass.isCanonicalizable()) {
                 COUNTER_CANONICALIZATION_CONSIDERED_NODES.increment(tool.debug);
@@ -595,7 +599,7 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                     graph.getOptimizationLog().withLazyProperty("replacedNodeClass", nodeClass::shortName).withLazyProperty("canonicalNodeClass",
                                     () -> (finalCanonical == null) ? null : finalCanonical.getNodeClass().shortName()).report(DebugContext.VERY_DETAILED_LEVEL, CanonicalizerPhase.class,
                                                     "CanonicalReplacement", node);
-                    smtComparisonEvaluation(originalReturnNode.compare(SMTUtils.getRepresentationOfReturnNode(graph)), tool);
+                    smtComparisonEvaluation(originalReturnNode.compare(SMTUtils.getRepresentationOfReturnNode(graph, ctx)), tool);
                     return true;
                 }
             }
@@ -610,7 +614,7 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                     if (node.isDeleted() || modCount != node.graph().getEdgeModificationCount()) {
                         StructuredGraph graph = (StructuredGraph) node.graph();
                         graph.getOptimizationLog().report(DebugContext.VERY_DETAILED_LEVEL, CanonicalizerPhase.class, "CfgSimplificationCustom", node);
-                        smtComparisonEvaluation(originalReturnNode.compare(SMTUtils.getRepresentationOfReturnNode(graph)), tool);
+                        smtComparisonEvaluation(originalReturnNode.compare(SMTUtils.getRepresentationOfReturnNode(graph, ctx)), tool);
                         return true;
                     }
                 }
@@ -623,7 +627,7 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                     if (node.isDeleted() || modCount != node.graph().getEdgeModificationCount()) {
                         StructuredGraph graph = (StructuredGraph) node.graph();
                         graph.getOptimizationLog().report(DebugContext.VERY_DETAILED_LEVEL, CanonicalizerPhase.class, "CfgSimplification", node);
-                        smtComparisonEvaluation(originalReturnNode.compare(SMTUtils.getRepresentationOfReturnNode(graph)), tool);
+                        smtComparisonEvaluation(originalReturnNode.compare(SMTUtils.getRepresentationOfReturnNode(graph, ctx)), tool);
                         return true;
                     }
                 }
@@ -879,14 +883,19 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
         return features.contains(READ_CANONICALIZATION);
     }
 
-    private void checkCanonicalizationWithSMT(Node node, Node canonical, Tool tool) throws IOException {
+    private void checkCanonicalizationWithSMT(Node node, Node canonical, Tool tool) {
+        if (canonical == null) {
+            return;
+        }
         tool.debug.log("Canonicalization has started");
 
-        var original = node.createSMTsolverexpression();
-        var canonicalized = canonical.createSMTsolverexpression();
+        try (Context ctx = new Context(Map.of("proof", "true"))) {
+            var original = node.createSMTsolverexpression(ctx);
+            var canonicalized = canonical.createSMTsolverexpression(ctx);
 
-        var comparison = original.compare(canonicalized);
-        smtComparisonEvaluation(comparison, tool);
+            var comparison = original.compare(canonicalized);
+            smtComparisonEvaluation(comparison, tool);
+        }
     }
 
     private void smtComparisonEvaluation(Pair<Status, Pair<Model, String>> comparisonResult, Tool tool) {

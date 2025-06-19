@@ -27,6 +27,7 @@ package jdk.graal.compiler.nodes.calc;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_1;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
+import com.microsoft.z3.Context;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp.Not;
@@ -99,15 +100,14 @@ public final class NotNode extends UnaryArithmeticNode<Not> implements Arithmeti
     }
 
     @Override
-    public SmtRepresentation<?> createSMTsolverexpression() {
-        var negated = value.createSMTsolverexpression();
-        var ctx = negated.getContext();
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var negated = value.createSMTsolverexpression(ctx);
 
         return switch (negated) {
             case IntegerSmtRepresentation repr: {
                 var x = repr.getExpression();
                 var expr = ctx.mkBVNot(x);
-                yield new IntegerSmtRepresentation(expr, repr);
+                yield new IntegerSmtRepresentation(expr, ctx, repr);
             }
             case UnknownSmtRepresentation repr: {
                 yield repr;

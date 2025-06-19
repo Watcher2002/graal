@@ -32,6 +32,7 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 
+import com.microsoft.z3.Context;
 import org.graalvm.collections.EconomicMap;
 import org.graalvm.collections.Equivalence;
 
@@ -2393,7 +2394,7 @@ public final class IfNode extends ControlSplitNode implements Simplifiable, LIRL
     }
 
     @Override
-    public SmtRepresentation<?> createSMTsolverexpression() {
-        return condition.createSMTsolverexpression();
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        return condition.createSMTsolverexpression(ctx);
     }
 }

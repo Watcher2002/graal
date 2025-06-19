@@ -27,6 +27,7 @@ package jdk.graal.compiler.nodes.calc;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_2;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
+import com.microsoft.z3.Context;
 import com.microsoft.z3.FPExpr;
 import jdk.graal.compiler.core.common.type.FloatStamp;
 import jdk.graal.compiler.core.common.type.Stamp;
@@ -37,7 +38,6 @@ import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
 import jdk.graal.compiler.nodes.ConstantNode;
 import jdk.graal.compiler.nodes.FloatSmtRepresentation;
-import jdk.graal.compiler.nodes.IntegerSmtRepresentation;
 import jdk.graal.compiler.nodes.NodeView;
 import jdk.graal.compiler.nodes.SMTUtils;
 import jdk.graal.compiler.nodes.SmtException;
@@ -104,9 +104,8 @@ public final class SignumNode extends UnaryNode implements ArithmeticLIRLowerabl
     }
 
     @Override
-    public SmtRepresentation<?> createSMTsolverexpression() {
-        var signum = value.createSMTsolverexpression();
-        var ctx = signum.getContext();
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var signum = value.createSMTsolverexpression(ctx);
 
         return switch (signum) {
             case FloatSmtRepresentation repr -> {
@@ -122,7 +121,7 @@ public final class SignumNode extends UnaryNode implements ArithmeticLIRLowerabl
                                 ctx.mkFP(1, sort)
                         )
                 );
-                yield new FloatSmtRepresentation(newExpr, repr);
+                yield new FloatSmtRepresentation(newExpr, ctx, repr);
             }
             case UnknownSmtRepresentation repr -> repr;
             default -> throw new SmtException(signum.toString());

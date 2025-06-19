@@ -27,7 +27,6 @@ package jdk.graal.compiler.nodes.calc;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_8;
 
 import com.microsoft.z3.Context;
-import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.calc.FloatConvert;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.FloatConvertOp;
@@ -169,20 +168,19 @@ public final class FloatConvertNode extends UnaryArithmeticNode<FloatConvertOp> 
     }
 
     @Override
-    public SmtRepresentation<?> createSMTsolverexpression() {
-        var conv = value.createSMTsolverexpression();
-        var ctx = conv.getContext();
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var conv = value.createSMTsolverexpression(ctx);
 
         return switch (conv) {
-            case FloatSmtRepresentation repr -> {// TODO Jakub ASK
+            case FloatSmtRepresentation repr -> {
                 var expr = repr.getExpression();
                 var newExpr = ctx.mkFPToBV(ctx.mkFPRoundNearestTiesToAway(), expr, expr.getEBits() + expr.getSBits(), true);
-                yield new IntegerSmtRepresentation(newExpr);
+                yield new IntegerSmtRepresentation(newExpr, ctx);
             }
             case IntegerSmtRepresentation repr -> {
                 var expr = repr.getExpression();
                 var newExpr = SMTUtils.BV2FP(ctx, expr);
-                yield new FloatSmtRepresentation(newExpr);
+                yield new FloatSmtRepresentation(newExpr, ctx);
             }
             case UnknownSmtRepresentation repr -> repr;
             default -> throw new IllegalStateException("Unknown SMT Representation type: " + conv);

@@ -27,6 +27,7 @@ package jdk.graal.compiler.nodes;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_0;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_0;
 
+import com.microsoft.z3.Context;
 import jdk.graal.compiler.graph.Graph;
 import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
@@ -100,7 +101,7 @@ public final class LogicConstantNode extends LIRLowerableLogicNode implements LI
     }
 
     @Override
-    public SmtRepresentation<?> createSMTsolverexpression() {
-        return IntegerSmtRepresentation.fromLogical(value);
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        return IntegerSmtRepresentation.fromLogical(value, ctx);
     }
 }

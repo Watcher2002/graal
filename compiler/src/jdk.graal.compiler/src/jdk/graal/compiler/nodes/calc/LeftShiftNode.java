@@ -24,6 +24,7 @@
  */
 package jdk.graal.compiler.nodes.calc;
 
+import com.microsoft.z3.Context;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.ShiftOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.ShiftOp.Shl;
@@ -186,13 +187,12 @@ public final class LeftShiftNode extends ShiftNode<Shl> {
     }
 
     @Override
-    public SmtRepresentation<?> createSMTsolverexpression() {
-        var left = x.createSMTsolverexpression();
-        var right = y.createSMTsolverexpression();
-        var ctx = left.getContext();
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var left = x.createSMTsolverexpression(ctx);
+        var right = y.createSMTsolverexpression(ctx);
 
         if (left instanceof UnknownSmtRepresentation || right instanceof UnknownSmtRepresentation ) {
-            return new UnknownSmtRepresentation();
+            return new UnknownSmtRepresentation(this);
         }
 
         return switch (left) {
@@ -200,7 +200,7 @@ public final class LeftShiftNode extends ShiftNode<Shl> {
                 var leftExpr = repr.getExpression();
                 var rightExpr = ((IntegerSmtRepresentation) right).getExpression();
                 var expr = ctx.mkBVSHL(leftExpr, rightExpr);
-                yield new IntegerSmtRepresentation(expr, repr, (IntegerSmtRepresentation) right);
+                yield new IntegerSmtRepresentation(expr, ctx, repr, (IntegerSmtRepresentation) right);
             }
             default -> throw new SmtException(left.toString(), right.toString());
         };

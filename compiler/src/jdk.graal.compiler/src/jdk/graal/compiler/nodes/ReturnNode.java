@@ -28,8 +28,6 @@ import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_2;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_4;
 
 import com.microsoft.z3.Context;
-import com.microsoft.z3.Solver;
-import jdk.graal.compiler.graph.Node;
 import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
 import jdk.graal.compiler.nodes.spi.LIRLowerable;
@@ -38,8 +36,6 @@ import jdk.graal.compiler.nodes.memory.MemoryMapNode;
 
 import jdk.vm.ci.code.TargetDescription;
 import jdk.vm.ci.meta.JavaKind;
-
-import java.util.ArrayList;
 
 @NodeInfo(cycles = CYCLES_2, size = SIZE_4, cyclesRationale = "Restore frame + ret", sizeRationale = "Restore frame + ret")
 public final class ReturnNode extends MemoryMapControlSinkNode implements LIRLowerable {
@@ -84,10 +80,10 @@ public final class ReturnNode extends MemoryMapControlSinkNode implements LIRLow
     }
 
     @Override
-    public SmtRepresentation<?>createSMTsolverexpression() {
+    public SmtRepresentation<?>createSMTsolverexpression(Context ctx) {
         if (result == null) {
             return new NullSmtRepresentation();
         }
-        return result.createSMTsolverexpression();
+        return result.createSMTsolverexpression(ctx);
     }
 }

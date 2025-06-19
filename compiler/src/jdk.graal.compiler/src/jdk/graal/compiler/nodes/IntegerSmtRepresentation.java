@@ -2,35 +2,36 @@ package jdk.graal.compiler.nodes;
 
 import com.microsoft.z3.BitVecExpr;
 import com.microsoft.z3.BoolExpr;
+import com.microsoft.z3.Context;
 import com.microsoft.z3.FPSort;
 import jdk.graal.compiler.core.common.type.IntegerStamp;
 
 public class IntegerSmtRepresentation extends SmtRepresentation<BitVecExpr> {
-    public IntegerSmtRepresentation(BitVecExpr expression) {
-        super(expression);
+    public IntegerSmtRepresentation(BitVecExpr expression, Context ctx) {
+        super(expression, ctx);
     }
 
-    public IntegerSmtRepresentation(BitVecExpr expression, BoolExpr constData) {
-        super(expression, constData);
+    public IntegerSmtRepresentation(BitVecExpr expression, Context ctx, BoolExpr constData) {
+        super(expression, ctx, constData);
     }
 
-    public IntegerSmtRepresentation(BitVecExpr expression, IntegerSmtRepresentation... originalRepresentations ) {
-        super(expression, originalRepresentations);
+    public IntegerSmtRepresentation(BitVecExpr expression, Context ctx, IntegerSmtRepresentation... originalRepresentations ) {
+        super(expression, ctx, originalRepresentations);
     }
 
-    public FloatSmtRepresentation toFloatSmtRepresentation(FPSort sort) {
-        return new FloatSmtRepresentation(ctx.mkFPToFP(expression, sort));
+//    public FloatSmtRepresentation toFloatSmtRepresentation(FPSort sort) {
+//        return new FloatSmtRepresentation(ctx.mkFPToFP(expression, sort));
+//    }
+
+    public static IntegerSmtRepresentation fromLogical(boolean value, Context ctx) {
+        return new IntegerSmtRepresentation(exprFromBool(value, ctx), ctx);
     }
 
-    public static IntegerSmtRepresentation fromLogical(boolean value) {
-        return new IntegerSmtRepresentation(exprFromBool(value));
-    }
-
-    public static BitVecExpr exprFromBool(boolean value) {
+    public static BitVecExpr exprFromBool(boolean value, Context ctx) {
         return ctx.mkBV((value) ? 1 : 0, 1);
     }
 
-    public static IntegerSmtRepresentation fromStamp(IntegerStamp stamp, String nodeName) {
+    public static IntegerSmtRepresentation fromStamp(IntegerStamp stamp, Context ctx, String nodeName) {
         int bitWidth = stamp.getBits();
         long minValue = stamp.lowerBound();
         long maxValue = stamp.upperBound();
@@ -53,6 +54,6 @@ public class IntegerSmtRepresentation extends SmtRepresentation<BitVecExpr> {
         );
 
         BoolExpr allConstraints = ctx.mkAnd(withinBounds, mustBeSetConstraint);
-        return new IntegerSmtRepresentation(bitVecValue, allConstraints);
+        return new IntegerSmtRepresentation(bitVecValue, ctx, allConstraints);
     }
 }

@@ -28,6 +28,7 @@ import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_2;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
 import com.microsoft.z3.BitVecExpr;
+import com.microsoft.z3.Context;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp.Abs;
@@ -131,9 +132,8 @@ public final class AbsNode extends UnaryArithmeticNode<Abs> implements Arithmeti
     }
 
     @Override
-    public SmtRepresentation<?> createSMTsolverexpression() {
-        var absValue = value.createSMTsolverexpression();
-        var ctx = absValue.getContext();
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var absValue = value.createSMTsolverexpression(ctx);
 
         return switch (absValue) {
             case IntegerSmtRepresentation repr: {
@@ -144,12 +144,12 @@ public final class AbsNode extends UnaryArithmeticNode<Abs> implements Arithmeti
                         x
                 );
 
-                yield new IntegerSmtRepresentation(expr, repr);
+                yield new IntegerSmtRepresentation(expr, ctx, repr);
             }
             case FloatSmtRepresentation repr:
                 var x = repr.getExpression();
                 var expr = ctx.mkFPAbs(x);
-                yield new FloatSmtRepresentation(expr, repr);
+                yield new FloatSmtRepresentation(expr, ctx, repr);
             case UnknownSmtRepresentation repr:
                 yield repr;
             default:
