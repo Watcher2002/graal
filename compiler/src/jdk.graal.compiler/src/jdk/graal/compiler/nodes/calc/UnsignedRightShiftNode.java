@@ -24,6 +24,7 @@
  */
 package jdk.graal.compiler.nodes.calc;
 
+import com.microsoft.z3.Context;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.ShiftOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.ShiftOp.UShr;
@@ -35,7 +36,11 @@ import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
 import jdk.graal.compiler.nodes.ConstantNode;
+import jdk.graal.compiler.nodes.IntegerSmtRepresentation;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SmtException;
+import jdk.graal.compiler.nodes.SmtRepresentation;
+import jdk.graal.compiler.nodes.UnknownSmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
 import jdk.graal.compiler.nodes.spi.NodeLIRBuilderTool;
@@ -166,5 +171,25 @@ public final class UnsignedRightShiftNode extends ShiftNode<UShr> {
         } else {
             return false;
         }
+    }
+
+    @Override
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var left = x.createSMTsolverexpression(ctx);
+        var right = y.createSMTsolverexpression(ctx);
+
+        if (left instanceof UnknownSmtRepresentation || right instanceof UnknownSmtRepresentation) {
+            return new UnknownSmtRepresentation(this);
+        }
+
+        return switch (left) {
+            case IntegerSmtRepresentation repr -> {
+                var leftExpr = repr.getExpression();
+                var rightExpr = ((IntegerSmtRepresentation) right).getExpression();
+                var expr = ctx.mkBVLSHR(leftExpr, rightExpr);
+                yield new IntegerSmtRepresentation(expr, ctx, repr, (IntegerSmtRepresentation) right);
+            }
+            default -> throw new SmtException(left.toString(), right.toString());
+        };
     }
 }

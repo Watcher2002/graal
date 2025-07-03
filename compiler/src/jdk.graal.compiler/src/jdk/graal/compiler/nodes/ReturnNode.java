@@ -27,6 +27,7 @@ package jdk.graal.compiler.nodes;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_2;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_4;
 
+import com.microsoft.z3.Context;
 import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
 import jdk.graal.compiler.nodes.spi.LIRLowerable;
@@ -76,5 +77,13 @@ public final class ReturnNode extends MemoryMapControlSinkNode implements LIRLow
             assert actual == expected : "return kind doesn't match: actual " + actual + ", expected: " + expected;
         }
         return true;
+    }
+
+    @Override
+    public SmtRepresentation<?>createSMTsolverexpression(Context ctx) {
+        if (result == null) {
+            return new NullSmtRepresentation();
+        }
+        return result.createSMTsolverexpression(ctx);
     }
 }

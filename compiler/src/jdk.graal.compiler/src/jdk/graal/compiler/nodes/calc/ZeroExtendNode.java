@@ -26,6 +26,7 @@ package jdk.graal.compiler.nodes.calc;
 
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_1;
 
+import com.microsoft.z3.Context;
 import jdk.graal.compiler.core.common.calc.CanonicalCondition;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.IntegerConvertOp;
@@ -39,8 +40,12 @@ import jdk.graal.compiler.graph.Node;
 import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
+import jdk.graal.compiler.nodes.IntegerSmtRepresentation;
 import jdk.graal.compiler.nodes.NodeView;
 import jdk.graal.compiler.nodes.ParameterNode;
+import jdk.graal.compiler.nodes.SmtException;
+import jdk.graal.compiler.nodes.SmtRepresentation;
+import jdk.graal.compiler.nodes.UnknownSmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.memory.address.AddressNode;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
@@ -178,5 +183,20 @@ public final class ZeroExtendNode extends IntegerConvertNode<ZeroExtend> {
     @Override
     public boolean mayNullCheckSkipConversion() {
         return true;
+    }
+
+    @Override
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var node = value.createSMTsolverexpression(ctx);
+
+        return switch (node) {
+            case IntegerSmtRepresentation repr ->  {
+                var expr = repr.getExpression();
+                var newExpr = ctx.mkZeroExt(resultBits - expr.getSortSize(), expr);
+                yield new IntegerSmtRepresentation(newExpr, ctx, repr);
+            }
+            case UnknownSmtRepresentation repr -> repr;
+            default -> throw new SmtException(node.toString());
+        };
     }
 }

@@ -27,12 +27,16 @@ package jdk.graal.compiler.nodes.calc;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_1;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
+import com.microsoft.z3.Context;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp.Not;
 import jdk.graal.compiler.core.common.type.Stamp;
 import jdk.graal.compiler.graph.NodeClass;
+import jdk.graal.compiler.nodes.IntegerSmtRepresentation;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SmtRepresentation;
+import jdk.graal.compiler.nodes.UnknownSmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.ArithmeticLIRLowerable;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
@@ -93,5 +97,23 @@ public final class NotNode extends UnaryArithmeticNode<Not> implements Arithmeti
     @Override
     public Stamp invertStamp(Stamp outStamp) {
         return getArithmeticOp().foldStamp(outStamp);
+    }
+
+    @Override
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var negated = value.createSMTsolverexpression(ctx);
+
+        return switch (negated) {
+            case IntegerSmtRepresentation repr: {
+                var x = repr.getExpression();
+                var expr = ctx.mkBVNot(x);
+                yield new IntegerSmtRepresentation(expr, ctx, repr);
+            }
+            case UnknownSmtRepresentation repr: {
+                yield repr;
+            }
+            default:
+                throw new IllegalStateException("Unknown SMT Representation type: " + negated);
+        };
     }
 }

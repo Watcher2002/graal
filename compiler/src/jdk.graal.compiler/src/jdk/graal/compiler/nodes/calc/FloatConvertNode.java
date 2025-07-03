@@ -26,6 +26,7 @@ package jdk.graal.compiler.nodes.calc;
 
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_8;
 
+import com.microsoft.z3.Context;
 import jdk.graal.compiler.core.common.calc.FloatConvert;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.FloatConvertOp;
@@ -37,7 +38,12 @@ import jdk.graal.compiler.debug.GraalError;
 import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
+import jdk.graal.compiler.nodes.FloatSmtRepresentation;
+import jdk.graal.compiler.nodes.IntegerSmtRepresentation;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SMTUtils;
+import jdk.graal.compiler.nodes.SmtRepresentation;
+import jdk.graal.compiler.nodes.UnknownSmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.ArithmeticLIRLowerable;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
@@ -159,5 +165,25 @@ public final class FloatConvertNode extends UnaryArithmeticNode<FloatConvertOp> 
     @Override
     public boolean mayNullCheckSkipConversion() {
         return false;
+    }
+
+    @Override
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var conv = value.createSMTsolverexpression(ctx);
+
+        return switch (conv) {
+            case FloatSmtRepresentation repr -> {
+                var expr = repr.getExpression();
+                var newExpr = ctx.mkFPToBV(ctx.mkFPRoundNearestTiesToAway(), expr, expr.getEBits() + expr.getSBits(), true);
+                yield new IntegerSmtRepresentation(newExpr, ctx);
+            }
+            case IntegerSmtRepresentation repr -> {
+                var expr = repr.getExpression();
+                var newExpr = SMTUtils.BV2FP(ctx, expr);
+                yield new FloatSmtRepresentation(newExpr, ctx);
+            }
+            case UnknownSmtRepresentation repr -> repr;
+            default -> throw new IllegalStateException("Unknown SMT Representation type: " + conv);
+        };
     }
 }

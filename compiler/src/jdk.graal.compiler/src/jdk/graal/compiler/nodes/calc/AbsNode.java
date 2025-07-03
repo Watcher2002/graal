@@ -27,6 +27,8 @@ package jdk.graal.compiler.nodes.calc;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_2;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
+import com.microsoft.z3.BitVecExpr;
+import com.microsoft.z3.Context;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp.Abs;
@@ -34,7 +36,13 @@ import jdk.graal.compiler.core.common.type.IntegerStamp;
 import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
+import jdk.graal.compiler.nodes.FloatSmtRepresentation;
+import jdk.graal.compiler.nodes.IntegerSmtRepresentation;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SMTUtils;
+import jdk.graal.compiler.nodes.SmtException;
+import jdk.graal.compiler.nodes.SmtRepresentation;
+import jdk.graal.compiler.nodes.UnknownSmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.ArithmeticLIRLowerable;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
@@ -62,7 +70,7 @@ public final class AbsNode extends UnaryArithmeticNode<Abs> implements Arithmeti
     }
 
     protected static ValueNode findSynonym(ValueNode forValue, NodeView view) {
-        ArithmeticOpTable.UnaryOp<Abs> absOp = ArithmeticOpTable.forStamp(forValue.stamp(view)).getAbs();
+        UnaryOp<Abs> absOp = ArithmeticOpTable.forStamp(forValue.stamp(view)).getAbs();
         ValueNode synonym = UnaryArithmeticNode.findSynonym(forValue, absOp);
         if (synonym != null) {
             return synonym;
@@ -89,6 +97,9 @@ public final class AbsNode extends UnaryArithmeticNode<Abs> implements Arithmeti
 
     @Override
     public ValueNode canonical(CanonicalizerTool tool, ValueNode forValue) {
+        if (SMTUtils.breakCanonicalization("Abs", forValue.graph())) {
+            return new NegateNode(forValue);
+        }
         ValueNode ret = super.canonical(tool, forValue);
         if (ret != this) {
             return ret;
@@ -118,5 +129,31 @@ public final class AbsNode extends UnaryArithmeticNode<Abs> implements Arithmeti
     @Override
     public void generate(NodeLIRBuilderTool nodeValueMap, ArithmeticLIRGeneratorTool gen) {
         nodeValueMap.setResult(this, gen.emitMathAbs(nodeValueMap.operand(getValue())));
+    }
+
+    @Override
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var absValue = value.createSMTsolverexpression(ctx);
+
+        return switch (absValue) {
+            case IntegerSmtRepresentation repr: {
+                var x = repr.getExpression();
+                var expr = (BitVecExpr) ctx.mkITE(
+                        ctx.mkBVSLT(x, ctx.mkBV(0, x.getSortSize())),
+                        ctx.mkBVNeg(x),
+                        x
+                );
+
+                yield new IntegerSmtRepresentation(expr, ctx, repr);
+            }
+            case FloatSmtRepresentation repr:
+                var x = repr.getExpression();
+                var expr = ctx.mkFPAbs(x);
+                yield new FloatSmtRepresentation(expr, ctx, repr);
+            case UnknownSmtRepresentation repr:
+                yield repr;
+            default:
+                throw new SmtException(absValue.toString());
+        };
     }
 }

@@ -26,6 +26,9 @@ package jdk.graal.compiler.nodes;
 
 import java.util.Iterator;
 
+import com.microsoft.z3.Context;
+import jdk.graal.compiler.core.common.type.FloatStamp;
+import jdk.graal.compiler.core.common.type.IntegerStamp;
 import jdk.graal.compiler.core.common.type.Stamp;
 import jdk.graal.compiler.debug.Assertions;
 import jdk.graal.compiler.debug.GraalError;
@@ -328,5 +331,14 @@ public abstract class ValueNode extends Node implements ValueNodeInterface {
             }
         }
         return true;
+    }
+
+    @Override
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        return switch (stamp) {
+            case IntegerStamp stmp -> IntegerSmtRepresentation.fromStamp(stmp, ctx, this.toString());
+            case FloatStamp stmp -> FloatSmtRepresentation.fromStamp(stmp, ctx, this.toString());
+            default -> new UnknownSmtRepresentation(this);
+        };
     }
 }

@@ -24,6 +24,8 @@
  */
 package jdk.graal.compiler.nodes.calc;
 
+import com.microsoft.z3.BitVecExpr;
+import com.microsoft.z3.Context;
 import jdk.graal.compiler.core.common.NumUtil;
 import jdk.graal.compiler.core.common.calc.CanonicalCondition;
 import jdk.graal.compiler.core.common.type.IntegerStamp;
@@ -33,10 +35,14 @@ import jdk.graal.compiler.debug.Assertions;
 import jdk.graal.compiler.graph.Node;
 import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
+import jdk.graal.compiler.nodes.IntegerSmtRepresentation;
 import jdk.graal.compiler.nodes.LogicConstantNode;
 import jdk.graal.compiler.nodes.LogicNegationNode;
 import jdk.graal.compiler.nodes.LogicNode;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SmtException;
+import jdk.graal.compiler.nodes.SmtRepresentation;
+import jdk.graal.compiler.nodes.UnknownSmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
 import jdk.graal.compiler.options.OptionValues;
@@ -307,5 +313,27 @@ public final class IntegerBelowNode extends IntegerLowerThanNode {
             }
         }
         return super.implies(thisNegated, other);
+    }
+
+    @Override
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var left = x.createSMTsolverexpression(ctx);
+        var right = y.createSMTsolverexpression(ctx);
+
+        if (left instanceof UnknownSmtRepresentation || right instanceof UnknownSmtRepresentation) {
+            return new UnknownSmtRepresentation(this);
+        }
+
+        return switch (left) {
+            case IntegerSmtRepresentation repr -> {
+                var leftExpr = repr.getExpression();
+                var rightExpr = ((IntegerSmtRepresentation) right).getExpression();
+                var newExpr = (BitVecExpr) ctx.mkITE(ctx.mkBVSLE(leftExpr, rightExpr),
+                        IntegerSmtRepresentation.exprFromBool(true, ctx),
+                        IntegerSmtRepresentation.exprFromBool(false, ctx));
+                yield new IntegerSmtRepresentation(newExpr, ctx);
+            }
+            default -> throw new SmtException(left.toString(), right.toString());
+        };
     }
 }

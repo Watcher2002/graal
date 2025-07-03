@@ -27,6 +27,7 @@ package jdk.graal.compiler.nodes.calc;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_2;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
+import com.microsoft.z3.Context;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp;
 import jdk.graal.compiler.core.common.type.ArithmeticOpTable.UnaryOp.Neg;
@@ -34,7 +35,12 @@ import jdk.graal.compiler.core.common.type.IntegerStamp;
 import jdk.graal.compiler.core.common.type.FloatStamp;
 import jdk.graal.compiler.core.common.type.Stamp;
 import jdk.graal.compiler.graph.NodeClass;
+import jdk.graal.compiler.nodes.FloatSmtRepresentation;
+import jdk.graal.compiler.nodes.IntegerSmtRepresentation;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SMTUtils;
+import jdk.graal.compiler.nodes.SmtRepresentation;
+import jdk.graal.compiler.nodes.UnknownSmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
 import jdk.graal.compiler.nodes.spi.NodeLIRBuilderTool;
@@ -73,6 +79,9 @@ public class NegateNode extends UnaryArithmeticNode<Neg> implements NarrowableAr
 
     @Override
     public ValueNode canonical(CanonicalizerTool tool, ValueNode forValue) {
+        if (SMTUtils.breakCanonicalization("Negate", forValue.graph())) {
+            return new AbsNode(forValue);
+        }
         ValueNode synonym = findSynonym(forValue, NodeView.DEFAULT);
         if (synonym != null) {
             return synonym;
@@ -81,7 +90,7 @@ public class NegateNode extends UnaryArithmeticNode<Neg> implements NarrowableAr
     }
 
     protected static ValueNode findSynonym(ValueNode forValue, NodeView view) {
-        ArithmeticOpTable.UnaryOp<Neg> negOp = ArithmeticOpTable.forStamp(forValue.stamp(view)).getNeg();
+        UnaryOp<Neg> negOp = ArithmeticOpTable.forStamp(forValue.stamp(view)).getNeg();
 
         // Folds constants
         ValueNode synonym = UnaryArithmeticNode.findSynonym(forValue, negOp);
@@ -117,5 +126,27 @@ public class NegateNode extends UnaryArithmeticNode<Neg> implements NarrowableAr
     @Override
     public Stamp invertStamp(Stamp outStamp) {
         return getArithmeticOp().foldStamp(outStamp);
+    }
+
+    @Override
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var negateValue = value.createSMTsolverexpression(ctx);
+
+        return switch (negateValue) {
+            case IntegerSmtRepresentation repr: {
+                var x = repr.getExpression();
+                var expr = ctx.mkBVNeg(x);
+                yield new IntegerSmtRepresentation(expr, ctx, repr);
+            }
+            case FloatSmtRepresentation repr: {
+                var x = repr.getExpression();
+                var expr = ctx.mkFPNeg(x);
+                yield new FloatSmtRepresentation(expr, ctx, repr);
+            }
+            case UnknownSmtRepresentation repr:
+                yield repr;
+            default:
+                throw new IllegalStateException("Unknown SMT Representation type: " + negateValue);
+        };
     }
 }

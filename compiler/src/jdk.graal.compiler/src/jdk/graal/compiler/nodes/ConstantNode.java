@@ -29,6 +29,10 @@ import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
 import java.util.Map;
 
+import com.microsoft.z3.BitVecExpr;
+import com.microsoft.z3.BoolExpr;
+import com.microsoft.z3.Context;
+import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.LIRKind;
 import jdk.graal.compiler.core.common.type.AbstractObjectStamp;
 import jdk.graal.compiler.core.common.type.FloatStamp;
@@ -240,7 +244,7 @@ public final class ConstantNode extends FloatingNode implements LIRLowerable, Ar
     public static ConstantNode forPrimitive(Stamp stamp, JavaConstant constant, StructuredGraph graph) {
         if (stamp instanceof IntegerStamp) {
             assert constant.getJavaKind().isNumericInteger() && stamp.getStackKind() == constant.getJavaKind().getStackKind() : Assertions.errorMessageContext("constant", constant, "stamp",
-                            stamp);
+                    stamp);
             IntegerStamp istamp = (IntegerStamp) stamp;
             return forIntegerBits(istamp.getBits(), constant, graph);
         } else {
@@ -256,7 +260,7 @@ public final class ConstantNode extends FloatingNode implements LIRLowerable, Ar
         if (stamp instanceof IntegerStamp) {
             PrimitiveConstant primitive = (PrimitiveConstant) constant;
             assert primitive.getJavaKind().isNumericInteger() && stamp.getStackKind() == primitive.getJavaKind().getStackKind() : Assertions.errorMessageContext("primitive", primitive, "stamp",
-                            stamp);
+                    stamp);
             IntegerStamp istamp = (IntegerStamp) stamp;
             return forIntegerBits(istamp.getBits(), primitive);
         } else if (stamp instanceof FloatStamp) {

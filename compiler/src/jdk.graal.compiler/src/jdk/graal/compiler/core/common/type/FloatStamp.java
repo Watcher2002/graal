@@ -34,12 +34,18 @@ import static jdk.graal.compiler.core.common.calc.FloatConvert.F2L;
 import java.nio.ByteBuffer;
 import java.util.function.DoubleBinaryOperator;
 
+import com.microsoft.z3.Context;
+import com.microsoft.z3.FPExpr;
+import com.microsoft.z3.Solver;
 import jdk.graal.compiler.core.common.LIRKind;
 import jdk.graal.compiler.core.common.NumUtil;
 import jdk.graal.compiler.core.common.calc.ReinterpretUtils;
 import jdk.graal.compiler.core.common.spi.LIRKindTool;
 import jdk.graal.compiler.debug.Assertions;
 import jdk.graal.compiler.debug.GraalError;
+import jdk.graal.compiler.graph.Node;
+import jdk.graal.compiler.nodes.SMTUtils;
+import jdk.graal.compiler.nodes.SmtRepresentation;
 import jdk.graal.compiler.serviceprovider.GraalServices;
 import jdk.vm.ci.meta.Constant;
 import jdk.vm.ci.meta.JavaConstant;

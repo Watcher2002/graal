@@ -27,6 +27,8 @@ package jdk.graal.compiler.nodes.calc;
 import static jdk.graal.compiler.nodeinfo.NodeCycles.CYCLES_2;
 import static jdk.graal.compiler.nodeinfo.NodeSize.SIZE_1;
 
+import com.microsoft.z3.Context;
+import com.microsoft.z3.FPExpr;
 import jdk.graal.compiler.core.common.type.FloatStamp;
 import jdk.graal.compiler.core.common.type.Stamp;
 import jdk.graal.compiler.debug.GraalError;
@@ -35,7 +37,12 @@ import jdk.graal.compiler.graph.NodeClass;
 import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
 import jdk.graal.compiler.nodes.ConstantNode;
+import jdk.graal.compiler.nodes.FloatSmtRepresentation;
 import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.SMTUtils;
+import jdk.graal.compiler.nodes.SmtException;
+import jdk.graal.compiler.nodes.SmtRepresentation;
+import jdk.graal.compiler.nodes.UnknownSmtRepresentation;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.ArithmeticLIRLowerable;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
@@ -74,6 +81,9 @@ public final class SignumNode extends UnaryNode implements ArithmeticLIRLowerabl
 
     @Override
     public Node canonical(CanonicalizerTool tool, ValueNode forValue) {
+        if (SMTUtils.breakCanonicalization("Signum", forValue.graph())) {
+            return new NegateNode(forValue);
+        }
         if (forValue.isJavaConstant()) {
             JavaConstant c = forValue.asJavaConstant();
             switch (c.getJavaKind()) {
@@ -91,5 +101,30 @@ public final class SignumNode extends UnaryNode implements ArithmeticLIRLowerabl
     @Override
     public void generate(NodeLIRBuilderTool nodeValueMap, ArithmeticLIRGeneratorTool gen) {
         nodeValueMap.setResult(this, gen.emitMathSignum(nodeValueMap.operand(getValue())));
+    }
+
+    @Override
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        var signum = value.createSMTsolverexpression(ctx);
+
+        return switch (signum) {
+            case FloatSmtRepresentation repr -> {
+                var expr = repr.getExpression();
+                var zero = ctx.mkFP(0, expr.getSort());
+                var sort = expr.getSort();
+                FPExpr newExpr = (FPExpr) ctx.mkITE(
+                        ctx.mkFPLt(expr, zero),
+                        ctx.mkFP(-1, sort),
+                        ctx.mkITE(
+                                ctx.mkEq(expr, zero),
+                                expr,
+                                ctx.mkFP(1, sort)
+                        )
+                );
+                yield new FloatSmtRepresentation(newExpr, ctx, repr);
+            }
+            case UnknownSmtRepresentation repr -> repr;
+            default -> throw new SmtException(signum.toString());
+        };
     }
 }

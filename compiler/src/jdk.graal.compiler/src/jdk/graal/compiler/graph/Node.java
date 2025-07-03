@@ -40,6 +40,9 @@ import java.util.Objects;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+import com.microsoft.z3.Context;
+import jdk.graal.compiler.nodes.SmtRepresentation;
+import jdk.graal.compiler.nodes.UnknownSmtRepresentation;
 import org.graalvm.collections.EconomicSet;
 
 import jdk.graal.compiler.core.common.Fields;
@@ -1853,5 +1856,12 @@ public abstract class Node implements Cloneable, Formattable {
     public NodeCycles estimatedNodeCycles() {
         return nodeClass.cycles();
     }
+
+    /**
+     * Node subclasses should override this method to specify how to add them to SMT solver.
+     */
+    public SmtRepresentation<?> createSMTsolverexpression(Context ctx) {
+        return new UnknownSmtRepresentation(this);
+    };
 
 }
