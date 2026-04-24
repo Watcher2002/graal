@@ -1,0 +1,37 @@
+package jdk.graal.compiler.smt;
+
+import com.microsoft.z3.BoolExpr;
+import com.microsoft.z3.Context;
+import com.microsoft.z3.Expr;
+import jdk.graal.compiler.replacements.arraycopy.ArrayCopyLookup;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public sealed interface SmtNode
+        permits BitVecBinOp, BitVecCmp, BitVecExtract, BitVecSignExt, BitVecUnOp, BitVecZeroExt, BoolBinOp, BoolNode, BoolUnOp, FloatNode, FpBinOp, FpUnOp, ITENode, IntNode, SymVar {
+
+    /**
+     * Compile this node into a Z3 Expr within the given context.
+     */
+    Expr<?> toZ3(Context ctx);
+
+    /**
+     * Which verification strategy should be used when this node is the root.
+     */
+    VerificationStrategy strategy();
+
+    default List<SmtNode> children() {
+        return List.of();
+    }
+
+    default List<BoolExpr> assumptions(Context ctx) {
+        var result = new ArrayList<BoolExpr>();
+
+        for (var child : children()) {
+            result.addAll(child.assumptions(ctx));
+        };
+
+        return result;
+    }
+}
