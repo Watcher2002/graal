@@ -7,7 +7,8 @@ import jdk.graal.compiler.core.common.type.IntegerStamp;
 
 import java.util.List;
 
-public record IntNode(String name, int bitWidth, IntegerStamp stamp) implements SmtNode {
+public record IntNode(String name, int bitWidth, IntegerStamp stamp, boolean signed) implements SmtNode {
+
     @Override
     public BitVecExpr toZ3(Context ctx) {
         return ctx.mkBVConst(name, bitWidth);
@@ -51,7 +52,11 @@ public record IntNode(String name, int bitWidth, IntegerStamp stamp) implements 
                 ? ctx.mkTrue()
                 : ctx.mkNot(ctx.mkEq(bitVec, ctx.mkBV(0, bitWidth)));
 
-        BoolExpr allConstraints = ctx.mkAnd(withinBounds, mustBeSetConstraint, mustBeZeroConstraint, nonZeroConstraint);
+        BoolExpr signednessConstraint = signed
+                ? ctx.mkTrue()
+                : ctx.mkAnd(ctx.mkBVUGE(ctx.mkBV(0, bitWidth), bitVec));
+
+        BoolExpr allConstraints = ctx.mkAnd(withinBounds, mustBeSetConstraint, mustBeZeroConstraint, nonZeroConstraint, signednessConstraint);
         return List.of(allConstraints);
     }
 }

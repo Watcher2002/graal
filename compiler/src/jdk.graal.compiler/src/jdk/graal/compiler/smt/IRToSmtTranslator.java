@@ -306,7 +306,9 @@ public final class IRToSmtTranslator {
 
     private SmtNode translatePhi(ValuePhiNode n) {
         if (n.merge() instanceof LoopBeginNode) {
-            return freshVar("loopPhi_" + stableNodeId(n), n);
+            // LoopBeginNode doesn't propagate that it is guarded to be unsigned
+            // to its stamp.
+            return freshVar("loopPhi_" + stableNodeId(n), n, ((LoopBeginNode) n.merge()).isProtectedNonOverflowingUnsigned());
         }
         List<ValueNode> values = new ArrayList<>(n.values());
         if (values.size() == 1) return translateNode(values.getFirst());
@@ -342,10 +344,14 @@ public final class IRToSmtTranslator {
     // ── Utilities ─────────────────────────────────────────────────────────────
 
     private SmtNode freshVar(String name, ValueNode n) {
+        return freshVar(name, n, true);
+    }
+
+    private SmtNode freshVar(String name, ValueNode n, boolean signed) {
         JavaKind kind = n.stamp(NodeView.DEFAULT).getStackKind();
         return switch (kind) {
-            case Int    -> new IntNode(name, 32, (IntegerStamp) n.stamp(NodeView.DEFAULT));
-            case Long   -> new IntNode(name, 64, (IntegerStamp) n.stamp(NodeView.DEFAULT));
+            case Int    -> new IntNode(name, 32, (IntegerStamp) n.stamp(NodeView.DEFAULT), signed);
+            case Long   -> new IntNode(name, 64, (IntegerStamp) n.stamp(NodeView.DEFAULT), signed);
             case Float  -> new FloatNode(name, FloatNode.FloatKind.F32);
             case Double -> new FloatNode(name, FloatNode.FloatKind.F64);
             default -> throw new UntranslatableException("freshVar: unknown kind " + kind);
