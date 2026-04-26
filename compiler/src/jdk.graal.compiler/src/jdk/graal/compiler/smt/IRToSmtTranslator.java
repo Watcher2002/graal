@@ -121,9 +121,10 @@ public final class IRToSmtTranslator {
             case AndNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.AND);
             case OrNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.OR);
             case XorNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.XOR);
-            case LeftShiftNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.SHL);
-            case RightShiftNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.ASHR);
-            case UnsignedRightShiftNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.LSHR);
+
+            case LeftShiftNode n -> translateJavaShift(n, n.getX(), n.getY(), BitVecOp.SHL);
+            case RightShiftNode n -> translateJavaShift(n, n.getX(), n.getY(), BitVecOp.ASHR);
+            case UnsignedRightShiftNode n -> translateJavaShift(n, n.getX(), n.getY(), BitVecOp.LSHR);
 
             // ── Negation (int and float) ───────────────────────────────────────
             case NegateNode n -> translateNegate(n);
@@ -323,6 +324,32 @@ public final class IRToSmtTranslator {
     private SmtNode translateParameter(ParameterNode n) {
         return freshVar("p" + n.index(), n);
     }
+
+    // ── Shift Conversion -──────────────────────────────────────────────────────
+
+    private SmtNode translateJavaShift(ValueNode shiftNode, ValueNode xNode, ValueNode yNode, BitVecOp op) {
+        SmtNode x = translateNode(xNode);
+        SmtNode y = translateNode(yNode);
+
+        BitVecExpr xBv = (BitVecExpr) x.toZ3(ctx);
+        BitVecExpr yBv = (BitVecExpr) y.toZ3(ctx);
+
+        int lhsBits = xBv.getSortSize();
+        int extendedBits = (shiftNode.stamp(NodeView.DEFAULT).getStackKind() == JavaKind.Int) ? 5 : 6;
+
+        BitVecExpr low = ctx.mkExtract(extendedBits - 1, 0, yBv);
+        BitVecExpr extended = ctx.mkZeroExt(lhsBits - extendedBits, low);
+
+        BitVecExpr shifted = switch (op) {
+            case SHL -> ctx.mkBVSHL(xBv, extended);
+            case ASHR -> ctx.mkBVASHR(xBv, extended);
+            case LSHR -> ctx.mkBVLSHR(xBv, extended);
+            default -> throw new IllegalArgumentException("not a shift op: " + op);
+        };
+
+        return new SymVar("shift_" + stableNodeId(shiftNode), shifted);
+    }
+
 
     // ── Width conversions ──────────────────────────────────────────────────────
 
