@@ -134,8 +134,9 @@ public final class IRToSmtTranslator {
                             + " (id=" + stableNodeId(node) + ")");
         };
 
-        memo.put(node, result);
-        return result;
+        SmtNode stamped = new StampedNode(result, node.stamp(NodeView.DEFAULT));
+        memo.put(node, stamped);
+        return stamped;
     }
 
     private int stableNodeId(Node node) {
