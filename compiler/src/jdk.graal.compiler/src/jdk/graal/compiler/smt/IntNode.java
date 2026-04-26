@@ -26,7 +26,7 @@ public record IntNode(String name, int bitWidth, IntegerStamp stamp, boolean sig
 
         BoolExpr signednessConstraint = signed
                 ? ctx.mkTrue()
-                : ctx.mkAnd(ctx.mkBVUGE(ctx.mkBV(0, bitWidth), bitVec));
+                : ctx.mkBVSGE(bitVec, ctx.mkBV(0, bitWidth));
 
         assumptions.add(signednessConstraint);
         return assumptions;

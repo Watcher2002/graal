@@ -5,6 +5,7 @@ import com.microsoft.z3.BoolExpr;
 import com.microsoft.z3.Context;
 import com.microsoft.z3.Expr;
 import com.microsoft.z3.FPExpr;
+import com.microsoft.z3.FPRMSort;
 import com.microsoft.z3.FPSort;
 import com.microsoft.z3.FuncDecl;
 import com.microsoft.z3.Sort;
@@ -163,7 +164,7 @@ public final class IRToSmtTranslator {
             case ZeroExtendNode n -> translateZeroExtend(n);
 
             // ── Float ↔ int conversion ─────────────────────────────────────────
-            case FloatConvertNode n -> opaqueUf(n); // TODO: Check how possible
+            case FloatConvertNode n -> translateFloatConvert(n);
 
             // ── Bit reinterpretation (e.g. Float.floatToRawIntBits) ────────────
             case ReinterpretNode n -> translateReinterpret(n);
@@ -356,6 +357,35 @@ public final class IRToSmtTranslator {
             ));
         }
         return inner;
+    }
+
+    // Float convert
+    private SmtNode translateFloatConvert(FloatConvertNode n) {
+        JavaKind inputKind = n.getValue().stamp(NodeView.DEFAULT).getStackKind();
+        JavaKind outputKind = n.stamp(NodeView.DEFAULT).getStackKind();
+
+        SmtNode input = translateNode(n.getValue());
+        String name = "floatConvert_" + stableNodeId(n);
+
+        return switch (inputKind) {
+            case Float, Double -> {
+                FPExpr fpExpr = (FPExpr) input.toZ3(ctx);
+                Expr<FPRMSort> sort = ctx.mkFPRoundNearestTiesToEven();
+                int bitVecSize = outputKind == JavaKind.Int ? 32 : 64;
+
+                yield new SymVar(name, ctx.mkFPToBV(sort, fpExpr, bitVecSize, true));
+            }
+
+            case Int, Long -> {
+                BitVecExpr bvExpr = (BitVecExpr) input.toZ3(ctx);
+                var signedness = ((IntNode) input).signed();
+                Expr<FPRMSort> roundingMode = ctx.mkFPRoundNearestTiesToEven();
+                var sort = outputKind == JavaKind.Int ? ctx.mkFPSort32() : ctx.mkFPSort64();
+                yield new SymVar(name, ctx.mkFPToFP(roundingMode, bvExpr, sort, signedness));
+            }
+
+            default -> throw new UntranslatableException("FloatConvertNode: unknown kind " + inputKind);
+        };
     }
 
     // Reinterpret
