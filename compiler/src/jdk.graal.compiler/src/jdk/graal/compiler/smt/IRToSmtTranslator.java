@@ -9,6 +9,7 @@ import com.microsoft.z3.FPRMSort;
 import com.microsoft.z3.FPSort;
 import com.microsoft.z3.FuncDecl;
 import com.microsoft.z3.Sort;
+import jdk.graal.compiler.core.common.calc.FloatConvert;
 import jdk.graal.compiler.core.common.type.IntegerStamp;
 import jdk.graal.compiler.graph.Node;
 import jdk.graal.compiler.nodes.ConstantNode;
@@ -388,31 +389,101 @@ public final class IRToSmtTranslator {
 
     // Float convert
     private SmtNode translateFloatConvert(FloatConvertNode n) {
-        JavaKind inputKind = n.getValue().stamp(NodeView.DEFAULT).getStackKind();
-        JavaKind outputKind = n.stamp(NodeView.DEFAULT).getStackKind();
-
         SmtNode input = translateNode(n.getValue());
         String name = "floatConvert_" + stableNodeId(n);
+        FloatConvert op = n.getFloatConvert();
 
-        return switch (inputKind) {
-            case Float, Double -> {
-                FPExpr fpExpr = (FPExpr) input.toZ3(ctx);
-                Expr<FPRMSort> sort = ctx.mkFPRoundNearestTiesToEven();
-                int bitVecSize = outputKind == JavaKind.Int ? 32 : 64;
+        return switch (op) {
+            case F2I, D2I -> new SymVar(name, fpToSignedBvJava((FPExpr) input.toZ3(ctx), 32));
+            case F2L, D2L -> new SymVar(name, fpToSignedBvJava((FPExpr) input.toZ3(ctx), 64));
 
-                yield new SymVar(name, ctx.mkFPToBV(sort, fpExpr, bitVecSize, true));
-            }
+            case F2UI, D2UI -> new SymVar(name, fpToUnsignedBvJava((FPExpr) input.toZ3(ctx), 32));
+            case F2UL, D2UL -> new SymVar(name, fpToUnsignedBvJava((FPExpr) input.toZ3(ctx), 64));
 
-            case Int, Long -> {
+            case I2F, L2F, UI2F, UL2F, I2D, L2D, UI2D, UL2D -> {
                 BitVecExpr bvExpr = (BitVecExpr) input.toZ3(ctx);
-                var signedness = ((IntNode) input).signed();
-                Expr<FPRMSort> roundingMode = ctx.mkFPRoundNearestTiesToEven();
-                var sort = outputKind == JavaKind.Int ? ctx.mkFPSort32() : ctx.mkFPSort64();
-                yield new SymVar(name, ctx.mkFPToFP(roundingMode, bvExpr, sort, signedness));
+                boolean signed = op == FloatConvert.I2F || op == FloatConvert.L2F
+                        || op == FloatConvert.I2D || op == FloatConvert.L2D;
+                FPSort sort = (op == FloatConvert.I2F || op == FloatConvert.L2F
+                        || op == FloatConvert.UI2F || op == FloatConvert.UL2F)
+                        ? ctx.mkFPSort32() : ctx.mkFPSort64();
+                yield new SymVar(name,
+                        ctx.mkFPToFP(ctx.mkFPRoundNearestTiesToEven(), bvExpr, sort, signed));
             }
 
-            default -> throw new UntranslatableException("FloatConvertNode: unknown kind " + inputKind);
+            case F2D -> {
+                FPExpr fpExpr = (FPExpr) input.toZ3(ctx);
+                yield new SymVar(name,
+                        ctx.mkFPToFP(ctx.mkFPRoundNearestTiesToEven(), fpExpr, ctx.mkFPSort64()));
+            }
+
+            case D2F -> {
+                FPExpr fpExpr = (FPExpr) input.toZ3(ctx);
+                yield new SymVar(name,
+                        ctx.mkFPToFP(ctx.mkFPRoundNearestTiesToEven(), fpExpr, ctx.mkFPSort32()));
+            }
         };
+    }
+
+    /**
+     * Encodes Java float-to-signed-int cast semantics as a total SMT term.
+     * Java JLS §5.1.3: NaN → 0; x ≥ 2^(bits-1) → MAX_VALUE; x < -2^(bits-1) → MIN_VALUE;
+     * otherwise truncate toward zero.
+     */
+    private BitVecExpr fpToSignedBvJava(FPExpr fp, int bits) {
+        Expr<FPRMSort> rtz = ctx.mkFPRoundTowardZero();
+        FPSort sort = (FPSort) fp.getSort();
+
+        BitVecExpr minBv = ctx.mkBV(bits == 32 ? Integer.MIN_VALUE : Long.MIN_VALUE, bits);
+        BitVecExpr maxBv = ctx.mkBV(bits == 32 ? Integer.MAX_VALUE : Long.MAX_VALUE, bits);
+        BitVecExpr zeroBv = ctx.mkBV(0, bits);
+
+        FPExpr fpUpperExcl = ctx.mkFPToFP(rtz, maxBv, sort, true);
+        FPExpr fpSatUpper = (bits == 32)
+                ? ctx.mkFP(2147483648.0f, sort)  // +2^31 in float
+                : ctx.mkFP(9223372036854775808.0, sort); // +2^63 in double
+        FPExpr fpSatLower = (bits == 32)
+                ? ctx.mkFP(-2147483648.0f, sort) // -2^31 in float
+                : ctx.mkFP(-9223372036854775808.0, sort); // -2^63 in double
+
+        BoolExpr isNaN = ctx.mkFPIsNaN(fp);
+        BoolExpr geUpper = ctx.mkFPGEq(fp, fpSatUpper);
+        BoolExpr ltLower = ctx.mkFPLt(fp, fpSatLower);
+
+        BitVecExpr inRange = ctx.mkFPToBV(rtz, fp, bits, true);
+
+        return (BitVecExpr) ctx.mkITE(isNaN, zeroBv,
+                ctx.mkITE(geUpper, maxBv,
+                        ctx.mkITE(ltLower, minBv,
+                                inRange)));
+    }
+
+    /**
+     * Encodes Java/Graal float-to-unsigned-int cast semantics as a total SMT term.
+     * NaN → 0; fp ≤ 0 → 0; fp ≥ 2^bits → UINT_MAX; otherwise truncate toward zero.
+     */
+    private BitVecExpr fpToUnsignedBvJava(FPExpr fp, int bits) {
+        Expr<FPRMSort> rtz = ctx.mkFPRoundTowardZero();
+        FPSort sort = fp.getSort();
+
+        BitVecExpr zeroBv = ctx.mkBV(0, bits);
+        BitVecExpr maxUnsigned = ctx.mkBV(-1L, bits);
+
+        FPExpr fpZero = ctx.mkFP(0.0, sort);
+        FPExpr fpUpperExcl = (bits == 32)
+                ? ctx.mkFP(4294967296.0, sort) // 2^32
+                : ctx.mkFP(18446744073709551616.0, sort); // 2^64
+
+        BoolExpr isNaN = ctx.mkFPIsNaN(fp);
+        BoolExpr leZero = ctx.mkFPLEq(fp, fpZero);
+        BoolExpr geUpper = ctx.mkFPGEq(fp, fpUpperExcl);
+
+        BitVecExpr inRange = ctx.mkFPToBV(rtz, fp, bits, false);
+
+        return (BitVecExpr) ctx.mkITE(isNaN, zeroBv,
+                ctx.mkITE(leZero, zeroBv,
+                        ctx.mkITE(geUpper, maxUnsigned,
+                                inRange)));
     }
 
     // Reinterpret
@@ -421,7 +492,7 @@ public final class IRToSmtTranslator {
         JavaKind outputKind = n.stamp(NodeView.DEFAULT).getStackKind();
 
         SmtNode input = translateNode(n.getValue());
-        String name = "reinterpret_bv2fp" + stableNodeId(n);
+        String name = "reinterpret_bv2fp_" + stableNodeId(n);
 
         return switch (inputKind) {
             case Float, Double -> {

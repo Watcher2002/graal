@@ -4,8 +4,11 @@ import com.microsoft.z3.BitVecExpr;
 import com.microsoft.z3.BoolExpr;
 import com.microsoft.z3.Context;
 import com.microsoft.z3.Expr;
+import com.microsoft.z3.FPExpr;
+import jdk.graal.compiler.core.common.type.FloatStamp;
 import jdk.graal.compiler.core.common.type.IntegerStamp;
 import jdk.graal.compiler.core.common.type.Stamp;
+import jdk.vm.ci.meta.JavaKind;
 
 import java.util.List;
 
@@ -64,6 +67,26 @@ public record StampedNode(SmtNode node, Stamp stamp) implements SmtNode {
                     : ctx.mkNot(ctx.mkEq(bitVec, ctx.mkBV(0, bitWidth)));
 
             BoolExpr allConstraints = ctx.mkAnd(withinBounds, mustBeSetConstraint, mustBeZeroConstraint, nonZeroConstraint);
+            assumptions.add(allConstraints);
+        }
+
+        if (stamp instanceof FloatStamp fpStamp && representation instanceof FPExpr fpExpr) {
+            var maxValue = fpStamp.upperBound();
+            var minValue = fpStamp.lowerBound();
+            var sort = fpStamp.getStackKind() == JavaKind.Float ? ctx.mkFPSort32() : ctx.mkFPSort64();
+
+            FPExpr minValueExpr = ctx.mkFP(minValue, sort);
+            FPExpr maxValueExpr = ctx.mkFP(maxValue, sort);
+            BoolExpr bounds = ctx.mkAnd(
+                    ctx.mkFPLEq(fpExpr, maxValueExpr),
+                    ctx.mkFPLEq(minValueExpr, fpExpr)
+            );
+
+            BoolExpr canBeNaN = fpStamp.isNonNaN()
+                    ? ctx.mkNot(ctx.mkFPIsNaN(fpExpr))
+                    : ctx.mkTrue();
+
+            BoolExpr allConstraints = ctx.mkAnd(bounds, canBeNaN);
             assumptions.add(allConstraints);
         }
 
