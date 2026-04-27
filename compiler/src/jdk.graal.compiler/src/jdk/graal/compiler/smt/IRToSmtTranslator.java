@@ -433,13 +433,12 @@ public final class IRToSmtTranslator {
      */
     private BitVecExpr fpToSignedBvJava(FPExpr fp, int bits) {
         Expr<FPRMSort> rtz = ctx.mkFPRoundTowardZero();
-        FPSort sort = (FPSort) fp.getSort();
+        FPSort sort = fp.getSort();
 
         BitVecExpr minBv = ctx.mkBV(bits == 32 ? Integer.MIN_VALUE : Long.MIN_VALUE, bits);
         BitVecExpr maxBv = ctx.mkBV(bits == 32 ? Integer.MAX_VALUE : Long.MAX_VALUE, bits);
         BitVecExpr zeroBv = ctx.mkBV(0, bits);
 
-        FPExpr fpUpperExcl = ctx.mkFPToFP(rtz, maxBv, sort, true);
         FPExpr fpSatUpper = (bits == 32)
                 ? ctx.mkFP(2147483648.0f, sort)  // +2^31 in float
                 : ctx.mkFP(9223372036854775808.0, sort); // +2^63 in double

@@ -24,11 +24,20 @@ public record IntNode(String name, int bitWidth, IntegerStamp stamp, boolean sig
         var assumptions = SmtNode.super.assumptions(ctx);
         var bitVec = toZ3(ctx);
 
-        BoolExpr signednessConstraint = signed
-                ? ctx.mkTrue()
-                : ctx.mkBVSGE(bitVec, ctx.mkBV(0, bitWidth));
+        if (!signed) {
+            long minValue = stamp.lowerBound();
+            long maxValue = stamp.upperBound();
 
-        assumptions.add(signednessConstraint);
+            BitVecExpr minValueExpr = ctx.mkBV(minValue, bitWidth);
+            BitVecExpr maxValueExpr = ctx.mkBV(maxValue, bitWidth);
+            BoolExpr withinBounds = ctx.mkAnd(
+                    ctx.mkBVULE(minValueExpr, bitVec),
+                    ctx.mkBVULE(bitVec, maxValueExpr)
+            );
+
+            assumptions.add(withinBounds);
+        }
+
         return assumptions;
     }
 }
