@@ -11,6 +11,7 @@ import com.microsoft.z3.FuncDecl;
 import com.microsoft.z3.Sort;
 import jdk.graal.compiler.core.common.calc.FloatConvert;
 import jdk.graal.compiler.core.common.type.IntegerStamp;
+import jdk.graal.compiler.core.common.type.PrimitiveStamp;
 import jdk.graal.compiler.graph.Node;
 import jdk.graal.compiler.nodes.ConstantNode;
 import jdk.graal.compiler.nodes.GuardedValueNode;
@@ -210,13 +211,13 @@ public final class IRToSmtTranslator {
             case Int, Long -> {
                 BitVecOp op = n instanceof AddNode ? BitVecOp.ADD
                         : n instanceof SubNode ? BitVecOp.SUB
-                        : /* MulNode */           BitVecOp.MUL;
+                        : BitVecOp.MUL;
                 yield bvBinOp(l, r, op);
             }
             case Float, Double -> {
                 FpOp op = n instanceof AddNode ? FpOp.FADD
                         : n instanceof SubNode ? FpOp.FSUB
-                        : /* MulNode */           FpOp.FMUL;
+                        : FpOp.FMUL;
                 yield fpBinOp(l, r, op);
             }
             default -> throw new UntranslatableException(
@@ -489,7 +490,7 @@ public final class IRToSmtTranslator {
     // Reinterpret
     private SmtNode translateReinterpret(ReinterpretNode n) {
         JavaKind inputKind = n.getValue().stamp(NodeView.DEFAULT).getStackKind();
-        JavaKind outputKind = n.stamp(NodeView.DEFAULT).getStackKind();
+        int bitwidth = ((PrimitiveStamp) n.stamp(NodeView.DEFAULT)).getBits();
 
         SmtNode input = translateNode(n.getValue());
         String name = "reinterpret_bv2fp_" + stableNodeId(n);
@@ -502,7 +503,7 @@ public final class IRToSmtTranslator {
 
             case Int, Long -> {
                 BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
-                FPSort sort = outputKind == JavaKind.Double ? ctx.mkFPSort64() : ctx.mkFPSort32();
+                FPSort sort = bitwidth == 32 ? ctx.mkFPSort32() : ctx.mkFPSort64();
                 yield new SymVar(name, ctx.mkFPToFP(bv, sort));
             }
 
@@ -559,11 +560,10 @@ public final class IRToSmtTranslator {
 
     private SmtNode freshVar(String name, ValueNode n, boolean signed) {
         JavaKind kind = n.stamp(NodeView.DEFAULT).getStackKind();
+        var bitwidth = ((PrimitiveStamp) n.stamp(NodeView.DEFAULT)).getBits();
         return switch (kind) {
-            case Int -> new IntNode(name, 32, (IntegerStamp) n.stamp(NodeView.DEFAULT), signed);
-            case Long -> new IntNode(name, 64, (IntegerStamp) n.stamp(NodeView.DEFAULT), signed);
-            case Float -> new FloatNode(name, FloatNode.FloatKind.F32);
-            case Double -> new FloatNode(name, FloatNode.FloatKind.F64);
+            case Int, Long -> new IntNode(name, bitwidth, (IntegerStamp) n.stamp(NodeView.DEFAULT), signed);
+            case Float, Double -> new FloatNode(name, bitwidth == 32 ? FloatNode.FloatKind.F32 : FloatNode.FloatKind.F64);
             default -> throw new UntranslatableException("freshVar: unknown kind " + kind);
         };
     }
