@@ -55,9 +55,12 @@ import jdk.graal.compiler.nodes.calc.XorNode;
 import jdk.graal.compiler.nodes.calc.ZeroExtendNode;
 import jdk.graal.compiler.nodes.java.LoadFieldNode;
 import jdk.graal.compiler.nodes.java.LoadIndexedNode;
+import jdk.vm.ci.code.CodeUtil;
+import jdk.vm.ci.meta.Constant;
 import jdk.vm.ci.meta.ConstantReflectionProvider;
 import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaKind;
+import jdk.vm.ci.meta.PrimitiveConstant;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -121,7 +124,7 @@ public final class IRToSmtTranslator {
             // ── Integer-only arithmetic ────────────────────────────────────────
             case SignedDivNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.SDIV);
             case UnsignedDivNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.UDIV);
-            case SignedRemNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.SREM);
+            case SignedRemNode n -> translateSignedRem(n);
             case UnsignedRemNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.UREM);
 
             // ── Bitwise / shifts (integer only) ───────────────────────────────
@@ -226,6 +229,48 @@ public final class IRToSmtTranslator {
             default -> throw new UntranslatableException(
                     "Unexpected kind " + kind + " on " + n.getClass().getSimpleName());
         };
+    }
+
+    /**
+     * Amother place where the check needs to be manually inserted because the
+     * optimization is based on a sprcific property of the graph, the solver
+     * can't be expected to figure out on its own.
+     *
+     * When the divisor is a constant power of 2 and all usages only compare as
+     * bvurem instead of bvsrem. This is sound because for power-of-2 y:
+     * bvsrem(x, y) == 0 if bvurem(x, y) == 0.
+     */
+    private SmtNode translateSignedRem(SignedRemNode n) {
+        ValueNode yNode = n.getY();
+        if (yNode.isConstant()) {
+            long constY = yNode.asJavaConstant().asLong();
+            if (constY > 0 && CodeUtil.isPowerOf2(constY) && allUsagesCompareAgainstZero(n)) {
+                return bvBinOp(n.getX(), yNode, BitVecOp.UREM);
+            }
+        }
+        return bvBinOp(n.getX(), yNode, BitVecOp.SREM);
+    }
+
+    /**
+     * Returns true if all usages of the node are IntegerEqualsNode comparisons against zero.
+     */
+    private static boolean allUsagesCompareAgainstZero(ValueNode node) {
+        if (!node.hasUsages()) {
+            return false;
+        }
+        for (Node usage : node.usages()) {
+            if (usage instanceof IntegerEqualsNode equalsNode) {
+                ValueNode other = equalsNode.getY() == node ? equalsNode.getX() : equalsNode.getY();
+                if (other instanceof ConstantNode constantNode) {
+                    Constant constant = constantNode.asConstant();
+                    if (constant instanceof PrimitiveConstant && ((PrimitiveConstant) constant).asLong() == 0) {
+                        continue;
+                    }
+                }
+            }
+            return false;
+        }
+        return true;
     }
 
     /**
