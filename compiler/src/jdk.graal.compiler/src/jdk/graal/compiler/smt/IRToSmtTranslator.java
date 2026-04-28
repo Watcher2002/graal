@@ -140,7 +140,7 @@ public final class IRToSmtTranslator {
             case AbsNode n -> translateAbs(n);
 
             // ── Sqrt (float only) ─────────────────────────────────────────────
-            case SqrtNode n -> fpUnOp(n.getValue(), FpOp.FSQRT);
+            case SqrtNode n -> translateSqrt(n);
 
             // ── Integer comparisons (return LogicNode / Bool) ──────────────────
             case IntegerLessThanNode n -> bvCmp(n.getX(), n.getY(), CmpOp.SLT);
@@ -258,6 +258,25 @@ public final class IRToSmtTranslator {
             case Float, Double -> new FpUnOp(x, FpOp.FABS);
             default -> throw new UntranslatableException("AbsNode: unknown kind " + kind);
         };
+    }
+
+    private SmtNode translateSqrt(SqrtNode n) {
+        // Needs to be as a separate condition which recognizes the F2D->Sqrt->D2F
+        // pattern. While the intermediate values (sqrt_double(F2D(x) and F2D(sqrt_float(x))
+        // may differ, IEEE 754 guarantees no double-rounding for sqrt when
+        // double precision ≥ 2× float precision, thus resulting in equivalence.
+        if (n.getValue() instanceof FloatConvertNode f2d
+                && f2d.getFloatConvert() == FloatConvert.F2D
+                && n.hasExactlyOneUsage()
+                && n.singleUsage() instanceof FloatConvertNode d2f
+                && d2f.getFloatConvert() == FloatConvert.D2F) {
+            SmtNode floatInput = translateNode(f2d.getValue());
+            SmtNode floatSqrt = new FpUnOp(floatInput, FpOp.FSQRT);
+            FPExpr sqrtExpr = (FPExpr) floatSqrt.toZ3(ctx);
+            return new SymVar("sqrt_f2d_" + stableNodeId(n),
+                    ctx.mkFPToFP(ctx.mkFPRoundNearestTiesToEven(), sqrtExpr, ctx.mkFPSort64()));
+        }
+        return fpUnOp(n.getValue(), FpOp.FSQRT);
     }
 
     private SmtNode fpEq(ValueNode l, ValueNode r) {
