@@ -55,6 +55,7 @@ import jdk.graal.compiler.nodes.calc.XorNode;
 import jdk.graal.compiler.nodes.calc.ZeroExtendNode;
 import jdk.graal.compiler.nodes.java.LoadFieldNode;
 import jdk.graal.compiler.nodes.java.LoadIndexedNode;
+import jdk.vm.ci.meta.ConstantReflectionProvider;
 import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaKind;
 
@@ -68,14 +69,17 @@ public final class IRToSmtTranslator {
 
     private final Context ctx;
     private final PathCondition pathCondition;
+    private final ConstantReflectionProvider constantReflection;
     private final Map<Node, SmtNode> memo = new IdentityHashMap<>();
     private final Map<Node, Integer> nodeIds = new IdentityHashMap<>();
     private int nextNodeId = 0;
     private final Map<String, FuncDecl<?>> ufCache = new HashMap<>();
 
-    public IRToSmtTranslator(Context ctx, PathCondition pathCondition) {
+    public IRToSmtTranslator(Context ctx, PathCondition pathCondition, ConstantReflectionProvider constantReflection) {
         this.ctx = ctx;
         this.pathCondition = pathCondition;
+        this.constantReflection = constantReflection;
+
     }
 
     public sealed interface TranslationResult
@@ -183,7 +187,7 @@ public final class IRToSmtTranslator {
 
             // ── Memory reads — opaque UF ───────────────────────────────────────
             case LoadFieldNode n -> translateLoadField(n);
-            case LoadIndexedNode n -> opaqueUf(n);
+            case LoadIndexedNode n -> translateLoadIndexed(n);
 
             // ── Anything else ──────────────────────────────────────────────────
             default -> throw new UntranslatableException(
@@ -306,9 +310,12 @@ public final class IRToSmtTranslator {
     // ── Constants ─────────────────────────────────────────────────────────────
 
     private SmtNode translateConstant(ConstantNode cn) {
-        JavaConstant jc = (JavaConstant) cn.getValue();
+        return translateJavaConstant((JavaConstant) cn.getValue());
+    }
+
+    private SmtNode translateJavaConstant(JavaConstant jc) {
         return switch (jc.getJavaKind()) {
-            case Int -> new SymVar(String.valueOf(jc.asInt()),
+            case Byte, Short, Char, Int -> new SymVar(String.valueOf(jc.asInt()),
                     ctx.mkBV(jc.asInt(), 32));
             case Long -> new SymVar(String.valueOf(jc.asLong()),
                     ctx.mkBV(jc.asLong(), 64));
@@ -417,6 +424,47 @@ public final class IRToSmtTranslator {
         FuncDecl<?> fd = ufCache.computeIfAbsent(fieldKey, k ->
                 ctx.mkFuncDecl(k, new Sort[]{recvExpr.getSort()}, returnSort));
         return new SymVar(fieldKey + "_" + stableNodeId(n), fd.apply(recvExpr));
+    }
+
+    private SmtNode translateLoadIndexed(LoadIndexedNode n) {
+        try {
+            JavaConstant arrayConstant = n.array().asJavaConstant();
+            JavaConstant indexConstant = n.index().asJavaConstant();
+
+            if (arrayConstant != null && indexConstant != null) {
+                int idx = indexConstant.asInt();
+                JavaConstant element = constantReflection.readArrayElement(
+                        arrayConstant, idx);
+                if (element != null) {
+                    return translateJavaConstant(element);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        String ufName;
+        JavaConstant arrayConstant = n.array().asJavaConstant();
+        if (arrayConstant != null) {
+            ufName = "smtArray_" + n.elementKind().name()
+                    + "_" + System.identityHashCode(arrayConstant);
+        } else {
+            ufName = "smtArray_" + n.elementKind().name()
+                    + "_" + stableNodeId(n);
+        }
+
+        Sort elementSort = sortFor(n);
+        Sort indexSort = ctx.mkBitVecSort(32);
+        FuncDecl<?> fd = ufCache.computeIfAbsent(ufName, k ->
+                ctx.mkFuncDecl(k, new Sort[]{indexSort}, elementSort));
+
+        Expr<?> indexExpr;
+        try {
+            indexExpr = translateNode(n.index()).toZ3(ctx);
+        } catch (UntranslatableException e) {
+            indexExpr = ctx.mkBVConst("idx_" + stableNodeId(n), 32);
+        }
+
+        return opaqueUf(ufName, fd.apply(indexExpr));
     }
 
     // Float convert
@@ -582,6 +630,10 @@ public final class IRToSmtTranslator {
         return new SymVar(key, fd.apply(argExprs.toArray(new Expr[0])));
     }
 
+    private SmtNode opaqueUf(String name, Expr<?> e) {
+        return new SymVar(name, e);
+    }
+
     // ── Utilities ─────────────────────────────────────────────────────────────
 
     private SmtNode freshVar(String name, ValueNode n) {
@@ -600,10 +652,11 @@ public final class IRToSmtTranslator {
 
     private Sort sortFor(ValueNode n) {
         return switch (n.stamp(NodeView.DEFAULT).getStackKind()) {
-            case Int -> ctx.mkBitVecSort(32);
+            case Byte, Short, Char, Int -> ctx.mkBitVecSort(32);
             case Long -> ctx.mkBitVecSort(64);
             case Float -> ctx.mkFPSort32();
             case Double -> ctx.mkFPSort64();
+            case Boolean -> ctx.mkBoolSort();
             default -> ctx.mkBitVecSort(64);
         };
     }

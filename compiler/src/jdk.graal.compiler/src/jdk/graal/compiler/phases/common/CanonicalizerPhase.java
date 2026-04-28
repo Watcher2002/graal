@@ -635,7 +635,7 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                 ConstantNode stampConstant = ConstantNode.forConstant(valueNode.stamp(NodeView.DEFAULT), constant, tool.context.getMetaAccess(), graph);
 
                 assert !Options.VerifyCanonicalizationWithSMT.getValue(tool.getOptions()) ||
-                        SmtCanonicalVerifier.verifyStampFold(valueNode, stampConstant, tool.debug) :
+                        SmtCanonicalVerifier.verifyStampFold(valueNode, stampConstant, tool.debug, tool) :
                         SmtCanonicalVerifier.counterexampleMessage();
 
                 valueNode.replaceAtUsages(stampConstant, InputType.Value);
@@ -717,7 +717,7 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                     throw new GraalGraphError(e).addContext(node);
                 }
                 assert !Options.VerifyCanonicalizationWithSMT.getValue(tool.getOptions()) ||
-                        SmtCanonicalVerifier.verifyCanonicalization(node, canonical, tool.debug) :
+                        SmtCanonicalVerifier.verifyCanonicalization(node, canonical, tool.debug, tool) :
                         SmtCanonicalVerifier.counterexampleMessage();
                 if (performReplacement(node, canonical, tool)) {
                     Node finalCanonical = canonical;

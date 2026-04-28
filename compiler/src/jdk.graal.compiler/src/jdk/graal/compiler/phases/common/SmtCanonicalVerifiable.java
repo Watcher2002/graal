@@ -6,6 +6,7 @@ import jdk.graal.compiler.graph.Node;
 import jdk.graal.compiler.nodes.ConstantNode;
 import jdk.graal.compiler.nodes.StructuredGraph;
 import jdk.graal.compiler.nodes.ValueNode;
+import jdk.graal.compiler.nodes.spi.CoreProviders;
 import jdk.graal.compiler.smt.CanonicalizationChecker;
 import jdk.graal.compiler.smt.IRToSmtTranslator;
 import jdk.graal.compiler.smt.PathCondition;
@@ -52,14 +53,14 @@ final class SmtCanonicalVerifier {
      * Returns true → rewrite is sound (UNSAT) or untranslatable (optimistic)
      * Returns false → Z3 found a counterexample; assert fires with the model
      */
-    static boolean verifyCanonicalization(Node before, Node canonical, DebugContext debug) {
+    static boolean verifyCanonicalization(Node before, Node canonical, DebugContext debug, CoreProviders providers) {
         // canonical == node means no change — nothing to verify
         if (canonical == null || canonical == before) return true;
         // Only value-producing nodes have an SMT model
         if (!(before instanceof ValueNode vBefore))   return true;
         if (!(canonical instanceof ValueNode vAfter)) return true;
 
-        return runCheck(vBefore, vAfter, "verifyCanonicalization", debug);
+        return runCheck(vBefore, vAfter, "verifyCanonicalization", debug, providers);
     }
 
     // ── Entry point 2: stamp-derived constant fold path ───────────────────────
@@ -74,8 +75,8 @@ final class SmtCanonicalVerifier {
      * with the stamp's range constraints. PiNode range constraints in the
      * PathCondition will narrow the input space appropriately.
      */
-    static boolean verifyStampFold(ValueNode node, ConstantNode stampConstant, DebugContext debug) {
-        return runCheck(node, stampConstant, "verifyStampFold", debug);
+    static boolean verifyStampFold(ValueNode node, ConstantNode stampConstant, DebugContext debug, CoreProviders providers) {
+        return runCheck(node, stampConstant, "verifyStampFold", debug, providers);
     }
 
     // ── Shared assert message accessor ────────────────────────────────────────
@@ -91,11 +92,11 @@ final class SmtCanonicalVerifier {
     // ── Shared implementation ─────────────────────────────────────────────────
 
     private static boolean runCheck(ValueNode before, ValueNode after,
-                                    String site, DebugContext debug) {
+                                    String site, DebugContext debug, CoreProviders providers) {
         try {
             CanonicalizationChecker checker = CHECKER.get();
             PathCondition pc     = new PathCondition();
-            IRToSmtTranslator tx = new IRToSmtTranslator(checker.getCtx(), pc);
+            IRToSmtTranslator tx = new IRToSmtTranslator(checker.getCtx(), pc, providers.getConstantReflection());
 
             IRToSmtTranslator.TranslationResult trBefore = tx.translate(before);
             IRToSmtTranslator.TranslationResult trAfter  = tx.translate(after);
