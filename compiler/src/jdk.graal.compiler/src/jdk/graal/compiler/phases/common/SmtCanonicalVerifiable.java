@@ -137,7 +137,6 @@ final class SmtCanonicalVerifier {
             };
 
         } catch (Throwable t) {
-            // Never crash the compiler — log and pass through
             debug.log(DebugContext.BASIC_LEVEL,
                     "[SMT-CANON:%s] INTERNAL ERROR verifying %s → %s : %s",
                     site, before.getClass().getSimpleName(),

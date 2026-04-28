@@ -180,7 +180,7 @@ public final class IRToSmtTranslator {
             case GuardedValueNode n -> translateNode(n.object());
 
             // ── Memory reads — opaque UF ───────────────────────────────────────
-            case LoadFieldNode n -> opaqueUf(n);
+            case LoadFieldNode n -> translateLoadField(n);
             case LoadIndexedNode n -> opaqueUf(n);
 
             // ── Anything else ──────────────────────────────────────────────────
@@ -352,7 +352,6 @@ public final class IRToSmtTranslator {
         return new SymVar("shift_" + stableNodeId(shiftNode), shifted);
     }
 
-
     // ── Width conversions ──────────────────────────────────────────────────────
 
     private SmtNode translateNarrow(NarrowNode n) {
@@ -386,6 +385,36 @@ public final class IRToSmtTranslator {
             ));
         }
         return inner;
+    }
+
+    // ── LoadFieldNode ─────────────────────────────────────────────────────────
+
+    private SmtNode translateLoadField(LoadFieldNode n) {
+        var field = n.field();
+        JavaKind kind = field.getJavaKind();
+
+        if (!kind.isPrimitive()) {
+            return opaqueUf(n);
+        }
+
+        String fieldKey = "field_" + field.getDeclaringClass().toJavaName(true).replace('.', '_')
+                + "_" + field.getName();
+
+        Sort returnSort = sortFor(n);
+
+        if (n.isStatic()) {
+            // Static field  acts like a symbolic constant.
+            FuncDecl<?> fd = ufCache.computeIfAbsent(fieldKey, k ->
+                    ctx.mkFuncDecl(k, new Sort[0], returnSort));
+            return new SymVar(fieldKey, fd.apply());
+        }
+
+        // Instance field one-argument UF.
+        SmtNode receiver = translateNode(n.object());
+        Expr<?> recvExpr = receiver.toZ3(ctx);
+        FuncDecl<?> fd = ufCache.computeIfAbsent(fieldKey, k ->
+                ctx.mkFuncDecl(k, new Sort[]{recvExpr.getSort()}, returnSort));
+        return new SymVar(fieldKey + "_" + stableNodeId(n), fd.apply(recvExpr));
     }
 
     // Float convert
