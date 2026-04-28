@@ -293,7 +293,7 @@ public final class IRToSmtTranslator {
             case Int, Long -> {
                 int bits = kind == JavaKind.Int ? 32 : 64;
                 SmtNode zero = new SymVar("0", ctx.mkBV(0, bits));
-                SmtNode neg = new BitVecUnOp(x, BitVecOp.NOT);
+                SmtNode neg = new BitVecUnOp(x, BitVecOp.NEG);
                 SmtNode lt = new BitVecCmp(x, zero, CmpOp.SLT);
                 yield new ITENode(lt, neg, x);
             }
