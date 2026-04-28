@@ -155,10 +155,7 @@ public final class IRToSmtTranslator {
             case LogicNegationNode n -> new BoolUnOp(translateNode(asValue(n.getValue())), BoolOp.NOT);
 
             // ShortCircuitOrNode has LogicNode inputs, not ValueNode inputs.
-            case ShortCircuitOrNode n -> new BoolBinOp(
-                    translateLogic(n.getX()),
-                    translateLogic(n.getY()),
-                    BoolOp.OR);
+            case ShortCircuitOrNode n -> translateShortCircuitOr(n);
 
             // ── Conditional / ternary ──────────────────────────────────────────
             case ConditionalNode n -> new ITENode(
@@ -320,6 +317,18 @@ public final class IRToSmtTranslator {
 
     private SmtNode bvCmp(ValueNode l, ValueNode r, CmpOp op) {
         return new BitVecCmp(translateNode(l), translateNode(r), op);
+    }
+
+    private SmtNode translateShortCircuitOr(ShortCircuitOrNode n) {
+        SmtNode xSmt = translateLogic(n.getX());
+        SmtNode ySmt = translateLogic(n.getY());
+        if (n.isXNegated()) {
+            xSmt = new BoolUnOp(xSmt, BoolOp.NOT);
+        }
+        if (n.isYNegated()) {
+            ySmt = new BoolUnOp(ySmt, BoolOp.NOT);
+        }
+        return new BoolBinOp(xSmt, ySmt, BoolOp.OR);
     }
 
     private SmtNode translateLogic(LogicNode logic) {
@@ -662,10 +671,6 @@ public final class IRToSmtTranslator {
         FuncDecl<?> fd = ufCache.computeIfAbsent(key, k ->
                 ctx.mkFuncDecl(k, argSorts.toArray(new Sort[0]), returnSort));
         return new SymVar(key, fd.apply(argExprs.toArray(new Expr[0])), argNodes);
-    }
-
-    private SmtNode opaqueUf(String name, Expr<?> e) {
-        return new SymVar(name, e);
     }
 
     // ── Utilities ─────────────────────────────────────────────────────────────
