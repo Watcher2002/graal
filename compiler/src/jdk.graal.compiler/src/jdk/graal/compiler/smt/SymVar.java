@@ -2,9 +2,15 @@ package jdk.graal.compiler.smt;
 
 import com.microsoft.z3.Context;
 import com.microsoft.z3.Expr;
-import jdk.graal.compiler.core.common.type.Stamp;
 
-public record SymVar(String debugName, Expr<?> expr) implements SmtNode { // TODO: Add stamp support
+import java.util.List;
+
+public record SymVar(String debugName, Expr<?> expr, List<SmtNode> sources) implements SmtNode {
+
+    public SymVar(String debugName, Expr<?> expr) {
+        this(debugName, expr, List.of());
+    }
+
     @Override
     public Expr<?> toZ3(Context ctx) {
         return expr;
@@ -13,5 +19,10 @@ public record SymVar(String debugName, Expr<?> expr) implements SmtNode { // TOD
     @Override
     public VerificationStrategy strategy() {
         return VerificationStrategy.FLAT_BV;
+    }
+
+    @Override
+    public List<SmtNode> children() {
+        return sources;
     }
 }

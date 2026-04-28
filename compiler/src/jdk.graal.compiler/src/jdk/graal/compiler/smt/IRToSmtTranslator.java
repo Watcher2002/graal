@@ -274,27 +274,33 @@ public final class IRToSmtTranslator {
             SmtNode floatSqrt = new FpUnOp(floatInput, FpOp.FSQRT);
             FPExpr sqrtExpr = (FPExpr) floatSqrt.toZ3(ctx);
             return new SymVar("sqrt_f2d_" + stableNodeId(n),
-                    ctx.mkFPToFP(ctx.mkFPRoundNearestTiesToEven(), sqrtExpr, ctx.mkFPSort64()));
+                    ctx.mkFPToFP(ctx.mkFPRoundNearestTiesToEven(), sqrtExpr, ctx.mkFPSort64()),
+                    List.of(floatSqrt));
         }
         return fpUnOp(n.getValue(), FpOp.FSQRT);
     }
 
     private SmtNode fpEq(ValueNode l, ValueNode r) {
-        FPExpr fl = (FPExpr) translateNode(l).toZ3(ctx);
-        FPExpr fr = (FPExpr) translateNode(r).toZ3(ctx);
-        return new SymVar("fpeq", ctx.mkFPEq(fl, fr));
+        SmtNode sl = translateNode(l);
+        SmtNode sr = translateNode(r);
+        FPExpr fl = (FPExpr) sl.toZ3(ctx);
+        FPExpr fr = (FPExpr) sr.toZ3(ctx);
+        return new SymVar("fpeq", ctx.mkFPEq(fl, fr), List.of(sl, sr));
     }
 
     private SmtNode fpLt(ValueNode l, ValueNode r, boolean unordered) {
-        FPExpr fl = (FPExpr) translateNode(l).toZ3(ctx);
-        FPExpr fr = (FPExpr) translateNode(r).toZ3(ctx);
+        SmtNode sl = translateNode(l);
+        SmtNode sr = translateNode(r);
+        FPExpr fl = (FPExpr) sl.toZ3(ctx);
+        FPExpr fr = (FPExpr) sr.toZ3(ctx);
         BoolExpr lt = ctx.mkFPLt(fl, fr);
+        List<SmtNode> sources = List.of(sl, sr);
         if (unordered) {
             BoolExpr nanL = ctx.mkFPIsNaN(fl);
             BoolExpr nanR = ctx.mkFPIsNaN(fr);
-            return new SymVar("fpult", ctx.mkOr(nanL, nanR, lt));
+            return new SymVar("fpult", ctx.mkOr(nanL, nanR, lt), sources);
         }
-        return new SymVar("fplt", lt);
+        return new SymVar("fplt", lt, sources);
     }
 
     /**
@@ -377,7 +383,7 @@ public final class IRToSmtTranslator {
             default -> throw new IllegalArgumentException("not a shift op: " + op);
         };
 
-        return new SymVar("shift_" + stableNodeId(shiftNode), shifted);
+        return new SymVar("shift_" + stableNodeId(shiftNode), shifted, List.of(x, y));
     }
 
     // ── Width conversions ──────────────────────────────────────────────────────
@@ -442,7 +448,7 @@ public final class IRToSmtTranslator {
         Expr<?> recvExpr = receiver.toZ3(ctx);
         FuncDecl<?> fd = ufCache.computeIfAbsent(fieldKey, k ->
                 ctx.mkFuncDecl(k, new Sort[]{recvExpr.getSort()}, returnSort));
-        return new SymVar(fieldKey + "_" + stableNodeId(n), fd.apply(recvExpr));
+        return new SymVar(fieldKey + "_" + stableNodeId(n), fd.apply(recvExpr), List.of(receiver));
     }
 
     private SmtNode translateLoadIndexed(LoadIndexedNode n) {
@@ -477,13 +483,16 @@ public final class IRToSmtTranslator {
                 ctx.mkFuncDecl(k, new Sort[]{indexSort}, elementSort));
 
         Expr<?> indexExpr;
+        SmtNode indexSource = null;
         try {
-            indexExpr = translateNode(n.index()).toZ3(ctx);
+            indexSource = translateNode(n.index());
+            indexExpr = indexSource.toZ3(ctx);
         } catch (UntranslatableException e) {
             indexExpr = ctx.mkBVConst("idx_" + stableNodeId(n), 32);
         }
 
-        return opaqueUf(ufName, fd.apply(indexExpr));
+        return new SymVar(ufName, fd.apply(indexExpr),
+                indexSource != null ? List.of(indexSource) : List.of());
     }
 
     // Float convert
@@ -493,11 +502,11 @@ public final class IRToSmtTranslator {
         FloatConvert op = n.getFloatConvert();
 
         return switch (op) {
-            case F2I, D2I -> new SymVar(name, fpToSignedBvJava((FPExpr) input.toZ3(ctx), 32));
-            case F2L, D2L -> new SymVar(name, fpToSignedBvJava((FPExpr) input.toZ3(ctx), 64));
+            case F2I, D2I -> new SymVar(name, fpToSignedBvJava((FPExpr) input.toZ3(ctx), 32), List.of(input));
+            case F2L, D2L -> new SymVar(name, fpToSignedBvJava((FPExpr) input.toZ3(ctx), 64), List.of(input));
 
-            case F2UI, D2UI -> new SymVar(name, fpToUnsignedBvJava((FPExpr) input.toZ3(ctx), 32));
-            case F2UL, D2UL -> new SymVar(name, fpToUnsignedBvJava((FPExpr) input.toZ3(ctx), 64));
+            case F2UI, D2UI -> new SymVar(name, fpToUnsignedBvJava((FPExpr) input.toZ3(ctx), 32), List.of(input));
+            case F2UL, D2UL -> new SymVar(name, fpToUnsignedBvJava((FPExpr) input.toZ3(ctx), 64), List.of(input));
 
             case I2F, L2F, UI2F, UL2F, I2D, L2D, UI2D, UL2D -> {
                 BitVecExpr bvExpr = (BitVecExpr) input.toZ3(ctx);
@@ -507,19 +516,22 @@ public final class IRToSmtTranslator {
                         || op == FloatConvert.UI2F || op == FloatConvert.UL2F)
                         ? ctx.mkFPSort32() : ctx.mkFPSort64();
                 yield new SymVar(name,
-                        ctx.mkFPToFP(ctx.mkFPRoundNearestTiesToEven(), bvExpr, sort, signed));
+                        ctx.mkFPToFP(ctx.mkFPRoundNearestTiesToEven(), bvExpr, sort, signed),
+                        List.of(input));
             }
 
             case F2D -> {
                 FPExpr fpExpr = (FPExpr) input.toZ3(ctx);
                 yield new SymVar(name,
-                        ctx.mkFPToFP(ctx.mkFPRoundNearestTiesToEven(), fpExpr, ctx.mkFPSort64()));
+                        ctx.mkFPToFP(ctx.mkFPRoundNearestTiesToEven(), fpExpr, ctx.mkFPSort64()),
+                        List.of(input));
             }
 
             case D2F -> {
                 FPExpr fpExpr = (FPExpr) input.toZ3(ctx);
                 yield new SymVar(name,
-                        ctx.mkFPToFP(ctx.mkFPRoundNearestTiesToEven(), fpExpr, ctx.mkFPSort32()));
+                        ctx.mkFPToFP(ctx.mkFPRoundNearestTiesToEven(), fpExpr, ctx.mkFPSort32()),
+                        List.of(input));
             }
         };
     }
@@ -595,13 +607,13 @@ public final class IRToSmtTranslator {
         return switch (inputKind) {
             case Float, Double -> {
                 FPExpr fp = (FPExpr) input.toZ3(ctx);
-                yield new SymVar(name, ctx.mkFPToIEEEBV(fp));
+                yield new SymVar(name, ctx.mkFPToIEEEBV(fp), List.of(input));
             }
 
             case Int, Long -> {
                 BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
                 FPSort sort = bitwidth == 32 ? ctx.mkFPSort32() : ctx.mkFPSort64();
-                yield new SymVar(name, ctx.mkFPToFP(bv, sort));
+                yield new SymVar(name, ctx.mkFPToFP(bv, sort), List.of(input));
             }
 
             default -> throw new UntranslatableException("ReinterpretNode: unknown kind " + inputKind);
@@ -634,19 +646,22 @@ public final class IRToSmtTranslator {
         Sort returnSort = sortFor(n);
         List<Expr<?>> argExprs = new ArrayList<>();
         List<Sort> argSorts = new ArrayList<>();
+        List<SmtNode> argNodes = new ArrayList<>();
         for (Node input : n.inputs()) {
             if (input instanceof ValueNode vn) {
                 try {
-                    Expr<?> e = translateNode(vn).toZ3(ctx);
+                    SmtNode smtArg = translateNode(vn);
+                    Expr<?> e = smtArg.toZ3(ctx);
                     argExprs.add(e);
                     argSorts.add(e.getSort());
+                    argNodes.add(smtArg);
                 } catch (UntranslatableException ignored) {
                 }
             }
         }
         FuncDecl<?> fd = ufCache.computeIfAbsent(key, k ->
                 ctx.mkFuncDecl(k, argSorts.toArray(new Sort[0]), returnSort));
-        return new SymVar(key, fd.apply(argExprs.toArray(new Expr[0])));
+        return new SymVar(key, fd.apply(argExprs.toArray(new Expr[0])), argNodes);
     }
 
     private SmtNode opaqueUf(String name, Expr<?> e) {
