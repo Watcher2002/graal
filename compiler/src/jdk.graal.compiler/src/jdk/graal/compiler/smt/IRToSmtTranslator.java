@@ -23,6 +23,7 @@ import jdk.graal.compiler.nodes.ParameterNode;
 import jdk.graal.compiler.nodes.PiNode;
 import jdk.graal.compiler.nodes.ShortCircuitOrNode;
 import jdk.graal.compiler.nodes.ValueNode;
+import jdk.graal.compiler.nodes.ValueProxyNode;
 import jdk.graal.compiler.nodes.ValuePhiNode;
 import jdk.graal.compiler.nodes.calc.AbsNode;
 import jdk.graal.compiler.nodes.calc.AddNode;
@@ -178,6 +179,7 @@ public final class IRToSmtTranslator {
             // ── Type narrowing / stamp ─────────────────────────────────────────
             case PiNode n -> translatePi(n);
             case GuardedValueNode n -> translateNode(n.object());
+            case ValueProxyNode n -> translateNode(n.value());
 
             // ── Memory reads — opaque UF ───────────────────────────────────────
             case LoadFieldNode n -> translateLoadField(n);
