@@ -679,6 +679,10 @@ public final class IRToSmtTranslator {
 
     private SmtNode translatePhi(ValuePhiNode n) {
         if (n.merge() instanceof LoopBeginNode) {
+            ValueNode single = n.singleValueOrThis();
+            if (single != n) {
+                return translateNode(single);
+            }
             // LoopBeginNode doesn't propagate that it is guarded to be unsigned
             // to its stamp.
             return freshVar("loopPhi_" + stableNodeId(n), n, ((LoopBeginNode) n.merge()).isProtectedNonOverflowingUnsigned());
