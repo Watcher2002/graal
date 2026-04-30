@@ -1,5 +1,6 @@
 package jdk.graal.compiler.smt;
 
+import com.microsoft.z3.BoolExpr;
 import com.microsoft.z3.Context;
 import com.microsoft.z3.Expr;
 
@@ -24,5 +25,14 @@ public record SymVar(String debugName, Expr<?> expr, List<SmtNode> sources) impl
     @Override
     public List<SmtNode> children() {
         return sources;
+    }
+
+    @Override
+    public List<BoolExpr> assumptions(Context ctx) {
+        var assumptions = SmtNode.super.assumptions(ctx);
+
+        assumptions.add(ctx.mkEq(ctx.mkConst(ctx.mkSymbol(debugName), expr.getSort()), toZ3(ctx)));
+
+        return assumptions;
     }
 }

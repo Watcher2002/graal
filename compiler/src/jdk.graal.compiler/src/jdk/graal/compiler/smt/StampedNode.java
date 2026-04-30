@@ -8,6 +8,7 @@ import com.microsoft.z3.FPExpr;
 import jdk.graal.compiler.core.common.type.FloatStamp;
 import jdk.graal.compiler.core.common.type.IntegerStamp;
 import jdk.graal.compiler.core.common.type.Stamp;
+import jdk.graal.compiler.vector.nodes.simd.LogicValueStamp;
 import jdk.vm.ci.meta.JavaKind;
 
 import java.util.List;
@@ -68,9 +69,7 @@ public record StampedNode(SmtNode node, Stamp stamp) implements SmtNode {
 
             BoolExpr allConstraints = ctx.mkAnd(withinBounds, mustBeSetConstraint, mustBeZeroConstraint, nonZeroConstraint);
             assumptions.add(allConstraints);
-        }
-
-        if (stamp instanceof FloatStamp fpStamp && representation instanceof FPExpr fpExpr) {
+        } else if (stamp instanceof FloatStamp fpStamp && representation instanceof FPExpr fpExpr) {
             var maxValue = fpStamp.upperBound();
             var minValue = fpStamp.lowerBound();
             var sort = fpStamp.getStackKind() == JavaKind.Float ? ctx.mkFPSort32() : ctx.mkFPSort64();
@@ -88,6 +87,12 @@ public record StampedNode(SmtNode node, Stamp stamp) implements SmtNode {
 
             BoolExpr allConstraints = ctx.mkAnd(bounds, canBeNaN);
             assumptions.add(allConstraints);
+        } else if (stamp instanceof LogicValueStamp logicStamp && representation instanceof BoolExpr boolExpr) {
+            if (logicStamp.equals(LogicValueStamp.TRUE)) {
+                assumptions.add(boolExpr);
+            } else if (logicStamp.equals(LogicValueStamp.FALSE)) {
+                assumptions.add(ctx.mkNot(boolExpr));
+            }
         }
 
         return assumptions;

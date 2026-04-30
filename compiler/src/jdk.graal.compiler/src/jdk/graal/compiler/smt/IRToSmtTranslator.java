@@ -15,6 +15,7 @@ import jdk.graal.compiler.core.common.type.PrimitiveStamp;
 import jdk.graal.compiler.graph.Node;
 import jdk.graal.compiler.nodes.ConstantNode;
 import jdk.graal.compiler.nodes.GuardedValueNode;
+import jdk.graal.compiler.nodes.LogicConstantNode;
 import jdk.graal.compiler.nodes.LogicNegationNode;
 import jdk.graal.compiler.nodes.LogicNode;
 import jdk.graal.compiler.nodes.LoopBeginNode;
@@ -37,6 +38,8 @@ import jdk.graal.compiler.nodes.calc.IntegerBelowNode;
 import jdk.graal.compiler.nodes.calc.IntegerEqualsNode;
 import jdk.graal.compiler.nodes.calc.IntegerLessThanNode;
 import jdk.graal.compiler.nodes.calc.LeftShiftNode;
+import jdk.graal.compiler.nodes.calc.MaxNode;
+import jdk.graal.compiler.nodes.calc.MinNode;
 import jdk.graal.compiler.nodes.calc.MulNode;
 import jdk.graal.compiler.nodes.calc.NarrowNode;
 import jdk.graal.compiler.nodes.calc.NegateNode;
@@ -49,12 +52,19 @@ import jdk.graal.compiler.nodes.calc.SignedRemNode;
 import jdk.graal.compiler.nodes.calc.SqrtNode;
 import jdk.graal.compiler.nodes.calc.SubNode;
 import jdk.graal.compiler.nodes.calc.UnsignedDivNode;
+import jdk.graal.compiler.nodes.calc.ExpandBitsNode;
+import jdk.graal.compiler.nodes.calc.IsNullNode;
+import jdk.graal.compiler.nodes.calc.RemNode;
+import jdk.graal.compiler.nodes.calc.RoundNode;
+import jdk.graal.compiler.nodes.calc.UnsignedMaxNode;
+import jdk.graal.compiler.nodes.calc.UnsignedMinNode;
 import jdk.graal.compiler.nodes.calc.UnsignedRemNode;
 import jdk.graal.compiler.nodes.calc.UnsignedRightShiftNode;
 import jdk.graal.compiler.nodes.calc.XorNode;
 import jdk.graal.compiler.nodes.calc.ZeroExtendNode;
 import jdk.graal.compiler.nodes.java.LoadFieldNode;
 import jdk.graal.compiler.nodes.java.LoadIndexedNode;
+import jdk.graal.compiler.nodes.type.StampTool;
 import jdk.vm.ci.code.CodeUtil;
 import jdk.vm.ci.meta.Constant;
 import jdk.vm.ci.meta.ConstantReflectionProvider;
@@ -73,7 +83,7 @@ public final class IRToSmtTranslator {
     private final Context ctx;
     private final PathCondition pathCondition;
     private final ConstantReflectionProvider constantReflection;
-    private final Map<Node, SmtNode> memo = new IdentityHashMap<>();
+    private Map<Node, SmtNode> memo;
     private final Map<Node, Integer> nodeIds = new IdentityHashMap<>();
     private int nextNodeId = 0;
     private final Map<String, FuncDecl<?>> ufCache = new HashMap<>();
@@ -95,11 +105,16 @@ public final class IRToSmtTranslator {
     }
 
     public TranslationResult translate(ValueNode node) {
+        setMemo(new IdentityHashMap<>());
         try {
             return new TranslationResult.Ok(translateNode(node));
         } catch (UntranslatableException e) {
             return new TranslationResult.Untranslatable(e.getMessage());
         }
+    }
+
+    private void setMemo(IdentityHashMap<Node, SmtNode> memo) {
+        this.memo = memo;
     }
 
     private SmtNode translateNode(ValueNode node) {
@@ -142,8 +157,20 @@ public final class IRToSmtTranslator {
             // ── Abs (int and float) ───────────────────────────────────────────
             case AbsNode n -> translateAbs(n);
 
+            // ── Min/Max ───────────────────────────────────────────────────────
+            case MinNode n -> translateMinMax(n.getX(), n.getY(), CmpOp.SLT, true);
+            case MaxNode n -> translateMinMax(n.getX(), n.getY(), CmpOp.SLT, false);
+            case UnsignedMinNode n -> translateMinMax(n.getX(), n.getY(), CmpOp.ULT, true);
+            case UnsignedMaxNode n -> translateMinMax(n.getX(), n.getY(), CmpOp.ULT, false);
+
             // ── Sqrt (float only) ─────────────────────────────────────────────
             case SqrtNode n -> translateSqrt(n);
+
+            // ── Float rounding ────────────────────────────────────────────────
+            case RoundNode n -> translateRound(n);
+
+            // ── Float remainder (Java's % on floats/doubles) ──────────────────
+            case RemNode n -> translateFpRem(n);
 
             // ── Integer comparisons (return LogicNode / Bool) ──────────────────
             case IntegerLessThanNode n -> bvCmp(n.getX(), n.getY(), CmpOp.SLT);
@@ -156,9 +183,13 @@ public final class IRToSmtTranslator {
 
             // ── Boolean logic ──────────────────────────────────────────────────
             case LogicNegationNode n -> new BoolUnOp(translateNode(asValue(n.getValue())), BoolOp.NOT);
+            case LogicConstantNode n -> new SymVar(String.valueOf(n.getValue()),
+                    n.getValue() ? ctx.mkTrue() : ctx.mkFalse());
 
             // ShortCircuitOrNode has LogicNode inputs, not ValueNode inputs.
             case ShortCircuitOrNode n -> translateShortCircuitOr(n);
+
+            case IsNullNode n -> translateIsNull(n);
 
             // ── Conditional / ternary ──────────────────────────────────────────
             case ConditionalNode n -> new ITENode(
@@ -302,6 +333,13 @@ public final class IRToSmtTranslator {
         };
     }
 
+    private SmtNode translateMinMax(ValueNode xNode, ValueNode yNode, CmpOp cmpOp, boolean isMin) {
+        SmtNode x = translateNode(xNode);
+        SmtNode y = translateNode(yNode);
+        SmtNode cmp = new BitVecCmp(x, y, cmpOp);
+        return isMin ? new ITENode(cmp, x, y) : new ITENode(cmp, y, x);
+    }
+
     private SmtNode translateSqrt(SqrtNode n) {
         // Needs to be as a separate condition which recognizes the F2D->Sqrt->D2F
         // pattern. While the intermediate values (sqrt_double(F2D(x) and F2D(sqrt_float(x))
@@ -320,6 +358,26 @@ public final class IRToSmtTranslator {
                     List.of(floatSqrt));
         }
         return fpUnOp(n.getValue(), FpOp.FSQRT);
+    }
+
+    private SmtNode translateRound(RoundNode n) {
+        SmtNode input = translateNode(n.getValue());
+        FPExpr fp = (FPExpr) input.toZ3(ctx);
+        Expr<FPRMSort> rm = switch (n.mode()) {
+            case DOWN     -> ctx.mkFPRoundTowardNegative();
+            case NEAREST  -> ctx.mkFPRoundNearestTiesToEven();
+            case UP       -> ctx.mkFPRoundTowardPositive();
+            case TRUNCATE -> ctx.mkFPRoundTowardZero();
+        };
+        return new SymVar("round_" + stableNodeId(n), ctx.mkFPRoundToIntegral(rm, fp), List.of(input));
+    }
+
+    private SmtNode translateFpRem(RemNode n) {
+        SmtNode l = translateNode(n.getX());
+        SmtNode r = translateNode(n.getY());
+        FPExpr fl = (FPExpr) l.toZ3(ctx);
+        FPExpr fr = (FPExpr) r.toZ3(ctx);
+        return new SymVar("fprem_" + stableNodeId(n), ctx.mkFPRem(fl, fr), List.of(l, r));
     }
 
     private SmtNode fpEq(ValueNode l, ValueNode r) {
@@ -386,10 +444,29 @@ public final class IRToSmtTranslator {
         throw new UntranslatableException("Expected ValueNode, got: " + n.getClass().getSimpleName());
     }
 
+    private SmtNode translateIsNull(IsNullNode n) {
+        String name = "isNull_" + stableNodeId(n);
+        var children = List.of(translateNode(n.getValue()));
+
+        if (StampTool.isPointerAlwaysNull(n.getValue())) {
+            return new SymVar(name, ctx.mkTrue(), children);
+        }
+        if (StampTool.isPointerNonNull(n.getValue())) {
+            return new SymVar(name, ctx.mkFalse(), children);
+        }
+
+        return new SymVar(name, ctx.mkBoolConst(name), children);
+    }
+
     // ── Constants ─────────────────────────────────────────────────────────────
 
     private SmtNode translateConstant(ConstantNode cn) {
-        return translateJavaConstant((JavaConstant) cn.getValue());
+        Constant value = cn.getValue();
+        if (!(value instanceof JavaConstant jc)) {
+            throw new UntranslatableException(
+                    "Non-Java constant: " + value.getClass().getSimpleName());
+        }
+        return translateJavaConstant(jc);
     }
 
     private SmtNode translateJavaConstant(JavaConstant jc) {
@@ -466,7 +543,7 @@ public final class IRToSmtTranslator {
         SmtNode inner = translateNode(n.object());
         if (n.stamp(NodeView.DEFAULT) instanceof IntegerStamp stamp
                 && inner.toZ3(ctx) instanceof BitVecExpr bv) {
-            int bits = stamp.getBits();
+            int bits = bv.getSortSize();
             pathCondition.push(ctx.mkAnd(
                     ctx.mkBVSLE(ctx.mkBV(stamp.lowerBound(), bits), bv),
                     ctx.mkBVSLE(bv, ctx.mkBV(stamp.upperBound(), bits))
@@ -730,6 +807,10 @@ public final class IRToSmtTranslator {
 
     private SmtNode freshVar(String name, ValueNode n, boolean signed) {
         JavaKind kind = n.stamp(NodeView.DEFAULT).getStackKind();
+        if (!(n.stamp(NodeView.DEFAULT) instanceof PrimitiveStamp)) {
+            return new SymVar("opaque_" + name, ctx.mkBVConst(name, 64));
+        }
+
         var bitwidth = ((PrimitiveStamp) n.stamp(NodeView.DEFAULT)).getBits();
         return switch (kind) {
             case Int, Long -> new IntNode(name, bitwidth, (IntegerStamp) n.stamp(NodeView.DEFAULT), signed);
