@@ -58,6 +58,11 @@ import jdk.graal.compiler.nodes.calc.IsNullNode;
 import jdk.graal.compiler.nodes.calc.RemNode;
 import jdk.graal.compiler.nodes.calc.RoundNode;
 import jdk.graal.compiler.nodes.calc.SignumNode;
+import jdk.graal.compiler.replacements.nodes.BitCountNode;
+import jdk.graal.compiler.replacements.nodes.CountLeadingZerosNode;
+import jdk.graal.compiler.replacements.nodes.CountTrailingZerosNode;
+import jdk.graal.compiler.replacements.nodes.ReverseBitsNode;
+import jdk.graal.compiler.replacements.nodes.ReverseBytesNode;
 import jdk.graal.compiler.replacements.nodes.arithmetic.IntegerAddExactOverflowNode;
 import jdk.graal.compiler.replacements.nodes.arithmetic.IntegerMulExactNode;
 import jdk.graal.compiler.replacements.nodes.arithmetic.IntegerMulExactOverflowNode;
@@ -167,7 +172,12 @@ public final class IRToSmtTranslator {
 
             // ── Abs (int and float) ───────────────────────────────────────────
             case AbsNode n -> translateAbs(n);
-
+            // ── Bit manipulation (integer only) ───────────────────────────────
+            case BitCountNode n -> translateBitCount(n);
+            case CountLeadingZerosNode n -> translateCountLeadingZeros(n);
+            case CountTrailingZerosNode n -> translateCountTrailingZeros(n);
+            case ReverseBitsNode n -> translateReverseBits(n);
+            case ReverseBytesNode n -> translateReverseBytes(n);
             // ── Signum (float only) ───────────────────────────────────────────
             case SignumNode n -> translateSignum(n);
 
@@ -887,7 +897,76 @@ public final class IRToSmtTranslator {
         return new SymVar("negOverflow_" + stableNodeId(n),
                 ctx.mkNot(ctx.mkBVNegNoOverflow(xBv)), List.of(x));
     }
+    // ── Bit manipulation ──────────────────────────────────────────────────
 
+    private SmtNode translateBitCount(BitCountNode n) {
+        SmtNode input = translateNode(n.getValue());
+        BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
+        int inBits = bv.getSortSize();
+        BitVecExpr sum = ctx.mkBV(0, inBits);
+        for (int i = 0; i < inBits; i++) {
+            sum = ctx.mkBVAdd(sum, ctx.mkZeroExt(inBits - 1, ctx.mkExtract(i, i, bv)));
+        }
+
+        BitVecExpr result = inBits > 32 ? ctx.mkExtract(31, 0, sum)
+                : inBits < 32 ? ctx.mkZeroExt(32 - inBits, sum) : sum;
+        return new SymVar("popcount_" + stableNodeId(n), result, List.of(input));
+    }
+
+    private SmtNode translateCountLeadingZeros(CountLeadingZerosNode n) {
+        SmtNode input = translateNode(n.getValue());
+        BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
+        int inBits = bv.getSortSize();
+
+        BitVecExpr result = ctx.mkBV(inBits, 32);
+        for (int i = 0; i < inBits; i++) {
+            result = (BitVecExpr) ctx.mkITE(
+                    ctx.mkEq(ctx.mkExtract(i, i, bv), ctx.mkBV(1, 1)),
+                    ctx.mkBV(inBits - 1 - i, 32),
+                    result);
+        }
+        return new SymVar("clz_" + stableNodeId(n), result, List.of(input));
+    }
+
+    private SmtNode translateCountTrailingZeros(CountTrailingZerosNode n) {
+        SmtNode input = translateNode(n.getValue());
+        BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
+        int inBits = bv.getSortSize();
+
+        BitVecExpr result = ctx.mkBV(inBits, 32);
+        for (int i = inBits - 1; i >= 0; i--) {
+            result = (BitVecExpr) ctx.mkITE(
+                    ctx.mkEq(ctx.mkExtract(i, i, bv), ctx.mkBV(1, 1)),
+                    ctx.mkBV(i, 32),
+                    result);
+        }
+        return new SymVar("ctz_" + stableNodeId(n), result, List.of(input));
+    }
+
+    private SmtNode translateReverseBits(ReverseBitsNode n) {
+        SmtNode input = translateNode(n.getValue());
+        BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
+        int inBits = bv.getSortSize();
+
+        BitVecExpr result = ctx.mkExtract(0, 0, bv);
+        for (int i = 1; i < inBits; i++) {
+            result = ctx.mkConcat(result, ctx.mkExtract(i, i, bv));
+        }
+        return new SymVar("reverseBits_" + stableNodeId(n), result, List.of(input));
+    }
+
+    private SmtNode translateReverseBytes(ReverseBytesNode n) {
+        SmtNode input = translateNode(n.getValue());
+        BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
+        int inBits = bv.getSortSize();
+        int numBytes = inBits / 8;
+
+        BitVecExpr result = ctx.mkExtract(7, 0, bv);
+        for (int i = 1; i < numBytes; i++) {
+            result = ctx.mkConcat(result, ctx.mkExtract(8 * i + 7, 8 * i, bv));
+        }
+        return new SymVar("reverseBytes_" + stableNodeId(n), result, List.of(input));
+    }
     // ── Signum ────────────────────────────────────────────────────────────────
     private SmtNode translateSignum(SignumNode n) {
         SmtNode x = translateNode(n.getValue());
