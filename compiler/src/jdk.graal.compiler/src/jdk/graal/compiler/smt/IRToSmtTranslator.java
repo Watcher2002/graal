@@ -355,8 +355,20 @@ public final class IRToSmtTranslator {
     }
 
     private SmtNode translateMinMax(ValueNode xNode, ValueNode yNode, CmpOp cmpOp, boolean isMin) {
+        JavaKind kind = xNode.stamp(NodeView.DEFAULT).getStackKind();
         SmtNode x = translateNode(xNode);
         SmtNode y = translateNode(yNode);
+        if (kind == JavaKind.Float || kind == JavaKind.Double) {
+            FPExpr fx = (FPExpr) x.toZ3(ctx);
+            FPExpr fy = (FPExpr) y.toZ3(ctx);
+            FPSort sort = fx.getSort();
+            return new SymVar("fpMinMax_" + stableNodeId(xNode),
+                    ctx.mkITE(
+                            ctx.mkOr(ctx.mkFPIsNaN(fx), ctx.mkFPIsNaN(fy)),
+                            ctx.mkFPNaN(sort),
+                            ctx.mkITE(isMin ? ctx.mkFPLt(fx, fy) : ctx.mkFPGt(fx, fy), fx, fy)),
+                    List.of(x, y));
+        }
         SmtNode cmp = new BitVecCmp(x, y, cmpOp);
         return isMin ? new ITENode(cmp, x, y) : new ITENode(cmp, y, x);
     }
@@ -487,6 +499,11 @@ public final class IRToSmtTranslator {
             throw new UntranslatableException(
                     "Non-Java constant: " + value.getClass().getSimpleName());
         }
+        if (cn.stamp(NodeView.DEFAULT) instanceof IntegerStamp intStamp) {
+            int bits = intStamp.getBits();
+            long raw = jc.getJavaKind() == JavaKind.Long ? jc.asLong() : jc.asInt();
+            return new SymVar(String.valueOf(raw), ctx.mkBV(raw, bits));
+        }
         return translateJavaConstant(jc);
     }
 
@@ -550,19 +567,27 @@ public final class IRToSmtTranslator {
     private SmtNode translateNarrow(NarrowNode n) {
         SmtNode input = translateNode(n.getValue());
         int to = n.getResultBits();
+        BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
+        if (bv.getSortSize() <= to) return input;
         return new BitVecExtract(input, to - 1, 0);
     }
 
     private SmtNode translateSignExtend(SignExtendNode n) {
         SmtNode input = translateNode(n.getValue());
-        int from = n.getInputBits(), to = n.getResultBits();
-        return new BitVecSignExt(input, to - from);
+        int to = n.getResultBits();
+        BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
+        int actualFrom = bv.getSortSize();
+        if (actualFrom >= to) return input;
+        return new BitVecSignExt(input, to - actualFrom);
     }
 
     private SmtNode translateZeroExtend(ZeroExtendNode n) {
         SmtNode input = translateNode(n.getValue());
-        int from = n.getInputBits(), to = n.getResultBits();
-        return new BitVecZeroExt(input, to - from);
+        int to = n.getResultBits();
+        BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
+        int actualFrom = bv.getSortSize();
+        if (actualFrom >= to) return input;
+        return new BitVecZeroExt(input, to - actualFrom);
     }
 
     // ── PiNode — stamp-range injection ────────────────────────────────────────
@@ -620,6 +645,10 @@ public final class IRToSmtTranslator {
                 JavaConstant element = constantReflection.readArrayElement(
                         arrayConstant, idx);
                 if (element != null) {
+                    if (n.stamp(NodeView.DEFAULT) instanceof IntegerStamp intStamp) {
+                        long raw = element.getJavaKind() == JavaKind.Long ? element.asLong() : element.asInt();
+                        return new SymVar(String.valueOf(raw), ctx.mkBV(raw, intStamp.getBits()));
+                    }
                     return translateJavaConstant(element);
                 }
             }
@@ -927,6 +956,9 @@ public final class IRToSmtTranslator {
     }
 
     private Sort sortFor(ValueNode n) {
+        if (n.stamp(NodeView.DEFAULT) instanceof IntegerStamp intStamp) {
+            return ctx.mkBitVecSort(intStamp.getBits());
+        }
         return switch (n.stamp(NodeView.DEFAULT).getStackKind()) {
             case Byte, Short, Char, Int -> ctx.mkBitVecSort(32);
             case Long -> ctx.mkBitVecSort(64);
