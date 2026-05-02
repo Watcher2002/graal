@@ -34,6 +34,7 @@ import jdk.graal.compiler.nodes.calc.ConditionalNode;
 import jdk.graal.compiler.nodes.calc.FloatConvertNode;
 import jdk.graal.compiler.nodes.calc.FloatEqualsNode;
 import jdk.graal.compiler.nodes.calc.FloatLessThanNode;
+import jdk.graal.compiler.nodes.calc.FusedMultiplyAddNode;
 import jdk.graal.compiler.nodes.calc.IntegerBelowNode;
 import jdk.graal.compiler.nodes.calc.IntegerEqualsNode;
 import jdk.graal.compiler.nodes.calc.IntegerLessThanNode;
@@ -151,6 +152,7 @@ public final class IRToSmtTranslator {
             case SubNode n -> translateBinaryArith(n.getX(), n.getY(), n);
             case MulNode n -> translateBinaryArith(n.getX(), n.getY(), n);
             case NotNode n -> translateNot(n);
+            case FusedMultiplyAddNode n -> translateFusedMultiplyAdd(n);
 
             // ── Integer-only arithmetic ────────────────────────────────────────
             case SignedDivNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.SDIV);
@@ -172,12 +174,14 @@ public final class IRToSmtTranslator {
 
             // ── Abs (int and float) ───────────────────────────────────────────
             case AbsNode n -> translateAbs(n);
+
             // ── Bit manipulation (integer only) ───────────────────────────────
             case BitCountNode n -> translateBitCount(n);
             case CountLeadingZerosNode n -> translateCountLeadingZeros(n);
             case CountTrailingZerosNode n -> translateCountTrailingZeros(n);
             case ReverseBitsNode n -> translateReverseBits(n);
             case ReverseBytesNode n -> translateReverseBytes(n);
+
             // ── Signum (float only) ───────────────────────────────────────────
             case SignumNode n -> translateSignum(n);
 
@@ -381,6 +385,18 @@ public final class IRToSmtTranslator {
         }
         SmtNode cmp = new BitVecCmp(x, y, cmpOp);
         return isMin ? new ITENode(cmp, x, y) : new ITENode(cmp, y, x);
+    }
+
+    private SmtNode translateFusedMultiplyAdd(FusedMultiplyAddNode n) {
+        SmtNode x = translateNode(n.getX());
+        SmtNode y = translateNode(n.getY());
+        SmtNode z = translateNode(n.getZ());
+        FPExpr fx = (FPExpr) x.toZ3(ctx);
+        FPExpr fy = (FPExpr) y.toZ3(ctx);
+        FPExpr fz = (FPExpr) z.toZ3(ctx);
+        return new SymVar("fma_" + stableNodeId(n),
+                ctx.mkFPFMA(ctx.mkFPRoundNearestTiesToEven(), fx, fy, fz),
+                List.of(x, y, z));
     }
 
     private SmtNode translateSqrt(SqrtNode n) {
