@@ -43,6 +43,7 @@ import jdk.graal.compiler.nodes.calc.MinNode;
 import jdk.graal.compiler.nodes.calc.MulNode;
 import jdk.graal.compiler.nodes.calc.NarrowNode;
 import jdk.graal.compiler.nodes.calc.NegateNode;
+import jdk.graal.compiler.nodes.calc.NotNode;
 import jdk.graal.compiler.nodes.calc.OrNode;
 import jdk.graal.compiler.nodes.calc.ReinterpretNode;
 import jdk.graal.compiler.nodes.calc.RightShiftNode;
@@ -144,6 +145,7 @@ public final class IRToSmtTranslator {
             case AddNode n -> translateBinaryArith(n.getX(), n.getY(), n);
             case SubNode n -> translateBinaryArith(n.getX(), n.getY(), n);
             case MulNode n -> translateBinaryArith(n.getX(), n.getY(), n);
+            case NotNode n -> translateNot(n);
 
             // ── Integer-only arithmetic ────────────────────────────────────────
             case SignedDivNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.SDIV);
@@ -509,6 +511,13 @@ public final class IRToSmtTranslator {
 
     private SmtNode translateParameter(ParameterNode n) {
         return freshVar("p" + n.index(), n);
+    }
+
+    // ── Not Node ──────────────────────────────────────────────────────────────
+
+    private SmtNode translateNot(NotNode n) {
+        SmtNode inner = translateNode(n.getValue());
+        return new BitVecUnOp(inner, BitVecOp.NOT);
     }
 
     // ── Shift Conversion -──────────────────────────────────────────────────────
