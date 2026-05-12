@@ -635,8 +635,8 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                 ConstantNode stampConstant = ConstantNode.forConstant(valueNode.stamp(NodeView.DEFAULT), constant, tool.context.getMetaAccess(), graph);
 
                 assert !Options.VerifyCanonicalizationWithSMT.getValue(tool.getOptions()) ||
-                        SmtCanonicalVerifier.verifyStampFold(valueNode, stampConstant, tool.debug, tool) :
-                        SmtCanonicalVerifier.counterexampleMessage();
+                        SmtCanonicalVerifierPhase.verifyStampFold(valueNode, stampConstant, tool.debug, tool) :
+                        SmtCanonicalVerifierPhase.counterexampleMessage();
 
                 valueNode.replaceAtUsages(stampConstant, InputType.Value);
                 GraphUtil.tryKillUnused(valueNode);
@@ -717,8 +717,8 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                     throw new GraalGraphError(e).addContext(node);
                 }
                 assert !Options.VerifyCanonicalizationWithSMT.getValue(tool.getOptions()) ||
-                        SmtCanonicalVerifier.verifyCanonicalization(node, canonical, tool.debug, tool) :
-                        SmtCanonicalVerifier.counterexampleMessage();
+                        SmtCanonicalVerifierPhase.verifyCanonicalization(node, canonical, tool.debug, tool) :
+                        SmtCanonicalVerifierPhase.counterexampleMessage();
                 if (performReplacement(node, canonical, tool)) {
                     Node finalCanonical = canonical;
                     StructuredGraph graph = (StructuredGraph) node.graph();

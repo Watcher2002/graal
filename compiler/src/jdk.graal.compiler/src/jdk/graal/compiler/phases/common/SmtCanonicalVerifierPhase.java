@@ -34,7 +34,7 @@ import jdk.graal.compiler.smt.VerificationResult;
  * Zero overhead in production: the assert body is compiled away entirely
  * when assertions are disabled.
  */
-final class SmtCanonicalVerifier {
+final class SmtCanonicalVerifierPhase {
 
     // Per-thread: Z3 Context and Solver are not thread-safe across threads.
     private static final ThreadLocal<CanonicalizationChecker> CHECKER =
@@ -164,5 +164,5 @@ final class SmtCanonicalVerifier {
                 model);
     }
 
-    private SmtCanonicalVerifier() {}
+    private SmtCanonicalVerifierPhase() {}
 }
