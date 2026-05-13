@@ -1,4 +1,4 @@
-package jdk.graal.compiler.phases.common;
+package jdk.graal.compiler.smt;
 
 import jdk.graal.compiler.debug.DebugContext;
 import jdk.graal.compiler.debug.TTY;
@@ -7,11 +7,6 @@ import jdk.graal.compiler.nodes.ConstantNode;
 import jdk.graal.compiler.nodes.StructuredGraph;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.CoreProviders;
-import jdk.graal.compiler.smt.CanonicalizationChecker;
-import jdk.graal.compiler.smt.IRToSmtTranslator;
-import jdk.graal.compiler.smt.PathCondition;
-import jdk.graal.compiler.smt.SmtNode;
-import jdk.graal.compiler.smt.VerificationResult;
 
 /**
  * SMT-based semantic equivalence verifier for canonicalization rewrites.
@@ -34,7 +29,7 @@ import jdk.graal.compiler.smt.VerificationResult;
  * Zero overhead in production: the assert body is compiled away entirely
  * when assertions are disabled.
  */
-final class SmtCanonicalVerifierPhase {
+public final class SmtCanonicalVerifier {
 
     // Per-thread: Z3 Context and Solver are not thread-safe across threads.
     private static final ThreadLocal<CanonicalizationChecker> CHECKER =
@@ -53,7 +48,7 @@ final class SmtCanonicalVerifierPhase {
      * Returns true → rewrite is sound (UNSAT) or untranslatable (optimistic)
      * Returns false → Z3 found a counterexample; assert fires with the model
      */
-    static boolean verifyCanonicalization(Node before, Node canonical, DebugContext debug, CoreProviders providers) {
+    public static boolean verifyCanonicalization(Node before, Node canonical, DebugContext debug, CoreProviders providers) {
         // canonical == node means no change — nothing to verify
         if (canonical == null || canonical == before) return true;
         // Only value-producing nodes have an SMT model
@@ -75,7 +70,7 @@ final class SmtCanonicalVerifierPhase {
      * with the stamp's range constraints. PiNode range constraints in the
      * PathCondition will narrow the input space appropriately.
      */
-    static boolean verifyStampFold(ValueNode node, ConstantNode stampConstant, DebugContext debug, CoreProviders providers) {
+    public static boolean verifyStampFold(ValueNode node, ConstantNode stampConstant, DebugContext debug, CoreProviders providers) {
         return runCheck(node, stampConstant, "verifyStampFold", debug, providers);
     }
 
@@ -84,7 +79,7 @@ final class SmtCanonicalVerifierPhase {
     /**
      * Evaluated lazily as the assert failure message — only when verify returned false.
      */
-    static String counterexampleMessage() {
+    public static String counterexampleMessage() {
         String msg = LAST_CE.get();
         return msg != null ? msg : "[SMT-CANON] counterexample unavailable";
     }
@@ -164,5 +159,5 @@ final class SmtCanonicalVerifierPhase {
                 model);
     }
 
-    private SmtCanonicalVerifierPhase() {}
+    private SmtCanonicalVerifier() {}
 }

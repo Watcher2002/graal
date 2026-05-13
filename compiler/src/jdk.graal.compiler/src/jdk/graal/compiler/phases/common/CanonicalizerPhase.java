@@ -35,6 +35,7 @@ import java.util.EnumSet;
 import java.util.Objects;
 import java.util.Optional;
 
+import jdk.graal.compiler.smt.SmtCanonicalVerifier;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.Pair;
 
@@ -635,8 +636,8 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                 ConstantNode stampConstant = ConstantNode.forConstant(valueNode.stamp(NodeView.DEFAULT), constant, tool.context.getMetaAccess(), graph);
 
                 assert !Options.VerifyCanonicalizationWithSMT.getValue(tool.getOptions()) ||
-                        SmtCanonicalVerifierPhase.verifyStampFold(valueNode, stampConstant, tool.debug, tool) :
-                        SmtCanonicalVerifierPhase.counterexampleMessage();
+                        SmtCanonicalVerifier.verifyStampFold(valueNode, stampConstant, tool.debug, tool) :
+                        SmtCanonicalVerifier.counterexampleMessage();
 
                 valueNode.replaceAtUsages(stampConstant, InputType.Value);
                 GraphUtil.tryKillUnused(valueNode);
@@ -717,8 +718,8 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                     throw new GraalGraphError(e).addContext(node);
                 }
                 assert !Options.VerifyCanonicalizationWithSMT.getValue(tool.getOptions()) ||
-                        SmtCanonicalVerifierPhase.verifyCanonicalization(node, canonical, tool.debug, tool) :
-                        SmtCanonicalVerifierPhase.counterexampleMessage();
+                        SmtCanonicalVerifier.verifyCanonicalization(node, canonical, tool.debug, tool) :
+                        SmtCanonicalVerifier.counterexampleMessage();
                 if (performReplacement(node, canonical, tool)) {
                     Node finalCanonical = canonical;
                     StructuredGraph graph = (StructuredGraph) node.graph();
