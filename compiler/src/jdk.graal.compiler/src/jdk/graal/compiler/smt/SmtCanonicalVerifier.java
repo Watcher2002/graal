@@ -127,7 +127,7 @@ public final class SmtCanonicalVerifier {
                     StructuredGraph graph = before.graph();
                     String msg = buildMessage(site, before, after, graph, formula, model.toString());
                     LAST_CE.set(msg);
-                    TTY.println(msg);
+                    debug.log(DebugContext.DETAILED_LEVEL, msg);
                     yield false;
                 }
             };

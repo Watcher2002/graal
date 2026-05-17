@@ -376,11 +376,21 @@ public final class IRToSmtTranslator {
             FPExpr fx = (FPExpr) x.toZ3(ctx);
             FPExpr fy = (FPExpr) y.toZ3(ctx);
             FPSort sort = fx.getSort();
+            BoolExpr eitherNaN = ctx.mkOr(ctx.mkFPIsNaN(fx), ctx.mkFPIsNaN(fy));
+            // When fp.gt and fp.lt are both false (i.e. +0.0 vs -0.0), Java's
+            // Math.max returns +0.0 and Math.min returns -0.0.
+            Expr<?> ordered;
+            if (isMin) {
+                Expr<?> tieBreak = ctx.mkITE(ctx.mkFPIsPositive(fx), fy, fx);
+                ordered = ctx.mkITE(ctx.mkFPLt(fx, fy), fx,
+                        ctx.mkITE(ctx.mkFPGt(fx, fy), fy, tieBreak));
+            } else {
+                Expr<?> tieBreak = ctx.mkITE(ctx.mkFPIsNegative(fx), fy, fx);
+                ordered = ctx.mkITE(ctx.mkFPGt(fx, fy), fx,
+                        ctx.mkITE(ctx.mkFPLt(fx, fy), fy, tieBreak));
+            }
             return new SymVar("fpMinMax_" + stableNodeId(xNode),
-                    ctx.mkITE(
-                            ctx.mkOr(ctx.mkFPIsNaN(fx), ctx.mkFPIsNaN(fy)),
-                            ctx.mkFPNaN(sort),
-                            ctx.mkITE(isMin ? ctx.mkFPLt(fx, fy) : ctx.mkFPGt(fx, fy), fx, fy)),
+                    ctx.mkITE(eitherNaN, ctx.mkFPNaN(sort), ordered),
                     List.of(x, y));
         }
         SmtNode cmp = new BitVecCmp(x, y, cmpOp);
