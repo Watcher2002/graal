@@ -151,7 +151,7 @@ public final class SmtCanonicalVerifier {
                         "  Formula : %s" +
                         "  Z3 model: %s%n",
                 site,
-                graph.method() != null
+                graph != null && graph.method() != null
                         ? graph.method().format("%H.%n(%p)") : "<unknown>",
                 before.getClass().getSimpleName(), before.getId(),
                 after.getClass().getSimpleName(),  after.getId(),

@@ -40,6 +40,7 @@ import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.Canonicalizable;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
 import jdk.graal.compiler.nodes.spi.NodeLIRBuilderTool;
+import jdk.graal.compiler.smt.SMTUtils;
 import jdk.vm.ci.code.CodeUtil;
 import jdk.vm.ci.meta.Constant;
 import jdk.vm.ci.meta.JavaConstant;
@@ -234,6 +235,7 @@ public class AddNode extends BinaryArithmeticNode<Add> implements NarrowableArit
             // we try to swap and canonicalize
             ValueNode improvement = canonical(tool, forY, forX);
             if (improvement != this) {
+                if (SMTUtils.introduceError("Add", tool)) return forY;
                 return improvement;
             }
             // if this fails we only swap

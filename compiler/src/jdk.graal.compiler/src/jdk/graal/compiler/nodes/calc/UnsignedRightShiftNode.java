@@ -39,6 +39,7 @@ import jdk.graal.compiler.nodes.NodeView;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
 import jdk.graal.compiler.nodes.spi.NodeLIRBuilderTool;
+import jdk.graal.compiler.smt.SMTUtils;
 import jdk.vm.ci.code.CodeUtil;
 import jdk.vm.ci.meta.JavaKind;
 
@@ -75,7 +76,18 @@ public final class UnsignedRightShiftNode extends ShiftNode<UShr> {
             return ret;
         }
 
-        return canonical(this, this.getArithmeticOp(), this.stamp(view), forX, forY, view);
+        ValueNode result = canonical(this, this.getArithmeticOp(), this.stamp(view), forX, forY, view);
+        if (result != this && SMTUtils.introduceError("UnsignedRightShift", tool)) {
+            // Error: (x<<a)>>>a rewrites to x&mask; use mask with one fewer bit
+            if (result instanceof AndNode andResult && andResult.getY().isJavaConstant()) {
+                long mask = andResult.getY().asJavaConstant().asLong();
+                long badMask = mask >>> 1;
+                return new AndNode(andResult.getX(), ConstantNode.forIntegerStamp(
+                        andResult.getY().stamp(view), badMask));
+            }
+            return forX;
+        }
+        return result;
     }
 
     @SuppressWarnings("unused")

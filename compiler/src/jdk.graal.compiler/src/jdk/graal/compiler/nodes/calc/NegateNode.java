@@ -41,6 +41,7 @@ import jdk.graal.compiler.nodes.spi.NodeLIRBuilderTool;
 import jdk.graal.compiler.nodes.spi.StampInverter;
 import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
+import jdk.graal.compiler.smt.SMTUtils;
 
 /**
  * The {@code NegateNode} node negates its operand.
@@ -75,6 +76,13 @@ public class NegateNode extends UnaryArithmeticNode<Neg> implements NarrowableAr
     public ValueNode canonical(CanonicalizerTool tool, ValueNode forValue) {
         ValueNode synonym = findSynonym(forValue, NodeView.DEFAULT);
         if (synonym != null) {
+            if (SMTUtils.introduceError("Negate", tool)) {
+                // Error: -(a-b) should return b-a; return a-b (original order) instead
+                if (forValue instanceof SubNode sub) {
+                    return SubNode.create(sub.getX(), sub.getY(), NodeView.DEFAULT);
+                }
+                return forValue;
+            }
             return synonym;
         }
         return this;
