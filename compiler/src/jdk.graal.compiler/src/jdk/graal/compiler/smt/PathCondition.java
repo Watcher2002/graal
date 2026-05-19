@@ -6,6 +6,12 @@ import com.microsoft.z3.Context;
 import java.util.ArrayDeque;
 import java.util.Deque;
 
+/**
+ * A stack-based collection of guard conditions accumulated along a control-flow path.
+ * Guards are pushed when entering conditional branches and popped on exit.
+ * {@link #conjunct} combines all active guards into a single conjunctive Z3 boolean expression.
+ * @author Jakub Wolek
+ */
 public final class PathCondition {
     private final Deque<BoolExpr> stack = new ArrayDeque<>();
 

@@ -13,6 +13,13 @@ import jdk.vm.ci.meta.JavaKind;
 
 import java.util.List;
 
+/**
+ * Wraps an {@link SmtNode} with its Graal {@link Stamp} to inject semantic constraints
+ * as SMT assumptions during verification.
+ * Depending on the stamp type ({@link IntegerStamp}, {@link FloatStamp}, or {@code LogicValueStamp}),
+ * assumptions encode value bounds, must-be-set/must-be-zero bit masks, and non-NaN flags.
+ * @author Jakub Wolek
+ */
 public record StampedNode(SmtNode node, Stamp stamp) implements SmtNode {
 
     @Override

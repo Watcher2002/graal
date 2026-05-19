@@ -7,6 +7,13 @@ import jdk.graal.compiler.debug.TTY;
 
 import java.util.HashMap;
 
+/**
+ * Checks that a canonicalization rewrite preserves semantics using the Z3 SMT solver.
+ * Given the SMT encodings of the original and rewritten expressions, it asserts their
+ * negated equivalence and queries Z3: UNSAT means the rewrite is valid, SAT returns a
+ * counterexample witness.
+ * @author Jakub Wolek
+ */
 public final class CanonicalizationChecker implements AutoCloseable {
 
     private final Context ctx;

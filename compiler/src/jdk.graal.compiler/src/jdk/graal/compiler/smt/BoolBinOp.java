@@ -5,6 +5,12 @@ import com.microsoft.z3.Context;
 
 import java.util.List;
 
+/**
+ * An SMT node representing a binary boolean operation.
+ * Supports {@link BoolOp#AND}, {@link BoolOp#OR}, {@link BoolOp#XOR}, and
+ * {@link BoolOp#IMPLIES}; {@link BoolOp#NOT} is rejected as it is unary.
+ * @author Jakub Wolek
+ */
 public record BoolBinOp(SmtNode left, SmtNode right, BoolOp op) implements SmtNode {
 
     @Override

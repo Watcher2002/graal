@@ -6,6 +6,12 @@ import com.microsoft.z3.Context;
 
 import java.util.List;
 
+/**
+ * An SMT node representing a bit-vector comparison.
+ * Compares two bit-vector operands using a {@link CmpOp} (e.g. signed/unsigned less-than)
+ * and produces a Z3 boolean expression.
+ * @author Jakub Wolek
+ */
 public record BitVecCmp(SmtNode left, SmtNode right,
                         CmpOp op) implements SmtNode {
 

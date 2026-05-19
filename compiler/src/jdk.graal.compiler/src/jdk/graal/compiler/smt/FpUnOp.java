@@ -6,6 +6,12 @@ import com.microsoft.z3.FPRMExpr;
 
 import java.util.List;
 
+/**
+ * An SMT node representing a unary floating-point operation.
+ * Accepts {@link FpOp#FNEG}, {@link FpOp#FABS}, and {@link FpOp#FSQRT};
+ * binary operations are rejected.
+ * @author Jakub Wolek
+ */
 public record FpUnOp(SmtNode operand, FpOp op) implements SmtNode {
 
     public FpUnOp {

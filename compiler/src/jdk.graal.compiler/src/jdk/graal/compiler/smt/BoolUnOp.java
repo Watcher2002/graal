@@ -5,6 +5,12 @@ import com.microsoft.z3.Context;
 
 import java.util.List;
 
+/**
+ * An SMT node representing a unary boolean operation.
+ * Only {@link BoolOp#NOT} is accepted; any other {@link BoolOp} throws
+ * {@link IllegalArgumentException}.
+ * @author Jakub Wolek
+ */
 public record BoolUnOp(SmtNode operand, BoolOp op) implements SmtNode {
 
     public BoolUnOp {

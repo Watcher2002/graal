@@ -28,6 +28,7 @@ import jdk.graal.compiler.nodes.spi.CoreProviders;
  *   -ea (JVM assertions enabled)
  * Zero overhead in production: the assert body is compiled away entirely
  * when assertions are disabled.
+ * @author Jakub Wolek
  */
 public final class SmtCanonicalVerifier {
 

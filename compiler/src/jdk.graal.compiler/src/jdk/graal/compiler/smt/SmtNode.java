@@ -7,6 +7,12 @@ import com.microsoft.z3.Expr;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Sealed interface defining the common contract for all SMT AST nodes.
+ * Each node can compile itself to a Z3 {@link com.microsoft.z3.Expr}, report its preferred
+ * {@link VerificationStrategy}, enumerate its child nodes, and emit auxiliary SMT assumptions.
+ * @author Jakub Wolek
+ */
 public sealed interface SmtNode
         permits BitVecBinOp, BitVecCmp, BitVecExtract, BitVecSignExt, BitVecUnOp, BitVecZeroExt, BoolBinOp, BoolNode, BoolUnOp, FloatNode, FpBinOp, FpUnOp, ITENode, IntNode, StampedNode, SymVar {
 

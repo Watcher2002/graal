@@ -6,6 +6,12 @@ import com.microsoft.z3.Expr;
 
 import java.util.List;
 
+/**
+ * An SMT node representing an if-then-else (ternary) expression.
+ * Evaluates to {@code thn} when {@code cond} holds and {@code els} otherwise,
+ * corresponding to Z3's {@code mkITE}.
+ * @author Jakub Wolek
+ */
 public record ITENode(SmtNode cond, SmtNode thn, SmtNode els) implements SmtNode {
     @Override
     public Expr<?> toZ3(Context ctx) {

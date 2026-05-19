@@ -91,6 +91,12 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Translates Graal IR {@link jdk.graal.compiler.nodes.ValueNode}s into Z3 SMT expressions.
+ * Uses memoized dispatch over node types to handle integer and floating-point arithmetic,
+ * comparisons, bit manipulation, phi nodes, and opaque operations.
+ * @author Jakub Wolek
+ */
 public final class IRToSmtTranslator {
 
     private final Context ctx;

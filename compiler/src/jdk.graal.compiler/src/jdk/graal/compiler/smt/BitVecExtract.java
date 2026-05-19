@@ -5,6 +5,11 @@ import com.microsoft.z3.Context;
 
 import java.util.List;
 
+/**
+ * An SMT node that extracts a contiguous range of bits {@code [low, high]} from a bit vector.
+ * Both indices are inclusive and must satisfy {@code high >= low >= 0}.
+ * @author Jakub Wolek
+ */
 public record BitVecExtract(SmtNode operand, int high, int low) implements SmtNode {
 
     public BitVecExtract {

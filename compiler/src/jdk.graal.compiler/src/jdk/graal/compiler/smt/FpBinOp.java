@@ -6,6 +6,12 @@ import com.microsoft.z3.FPRMExpr;
 
 import java.util.List;
 
+/**
+ * An SMT node representing a binary floating-point operation.
+ * Supports {@link FpOp#FADD}, {@link FpOp#FSUB}, {@link FpOp#FMUL}, and {@link FpOp#FDIV},
+ * all evaluated with round-to-nearest-even rounding mode.
+ * @author Jakub Wolek
+ */
 public record FpBinOp(SmtNode left, SmtNode right, FpOp op) implements SmtNode {
 
     public FpBinOp {

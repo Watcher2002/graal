@@ -5,6 +5,12 @@ import com.microsoft.z3.Context;
 
 import java.util.List;
 
+/**
+ * An SMT node representing a unary bit-vector operation.
+ * Only {@link BitVecOp#NEG} (two's-complement negation) and {@link BitVecOp#NOT}
+ * (bitwise complement) are valid unary operations.
+ * @author Jakub Wolek
+ */
 public record BitVecUnOp(SmtNode operand, BitVecOp op) implements SmtNode {
 
     public BitVecUnOp {

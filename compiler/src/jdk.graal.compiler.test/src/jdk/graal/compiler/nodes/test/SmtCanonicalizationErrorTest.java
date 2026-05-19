@@ -43,6 +43,7 @@ import org.junit.Test;
  *   <li>Asserts that {@link SmtCanonicalVerifier#verifyCanonicalization} returns {@code false},
  *       meaning Z3 found a counterexample — the bug was caught.</li>
  * </ol>
+ * @author Jakub Wolek
  */
 public class SmtCanonicalizationErrorTest extends GraalCompilerTest {
 

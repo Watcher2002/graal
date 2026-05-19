@@ -5,6 +5,11 @@ import com.microsoft.z3.Context;
 
 import java.util.List;
 
+/**
+ * An SMT node that zero-extends a bit vector by prepending zero bits at the high end.
+ * {@code extensionBits} must be positive.
+ * @author Jakub Wolek
+ */
 public record BitVecZeroExt(SmtNode operand, int extensionBits) implements SmtNode {
 
     public BitVecZeroExt {

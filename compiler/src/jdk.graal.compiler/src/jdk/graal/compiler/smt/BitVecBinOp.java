@@ -5,6 +5,12 @@ import com.microsoft.z3.Context;
 
 import java.util.List;
 
+/**
+ * An SMT node representing a binary bit-vector operation.
+ * The operation is one of {@link BitVecOp} and is applied to two bit-vector operands,
+ * producing a Z3 {@code BitVecExpr}.
+ * @author Jakub Wolek
+ */
 public record BitVecBinOp(SmtNode left, SmtNode right, BitVecOp op) implements SmtNode {
 
     @Override

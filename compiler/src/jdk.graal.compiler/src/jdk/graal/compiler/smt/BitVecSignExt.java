@@ -5,6 +5,11 @@ import com.microsoft.z3.Context;
 
 import java.util.List;
 
+/**
+ * An SMT node that sign-extends a bit vector by replicating its most significant bit.
+ * {@code extensionBits} additional bits are appended at the high end; must be positive.
+ * @author Jakub Wolek
+ */
 public record BitVecSignExt(SmtNode operand, int extensionBits) implements SmtNode {
 
     public BitVecSignExt {

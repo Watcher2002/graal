@@ -7,6 +7,12 @@ import jdk.graal.compiler.core.common.type.IntegerStamp;
 
 import java.util.List;
 
+/**
+ * An SMT node representing a named integer variable backed by a Z3 bit vector.
+ * Value-range and bit-mask constraints derived from the {@link IntegerStamp} are emitted
+ * as SMT assumptions consumed during verification.
+ * @author Jakub Wolek
+ */
 public record IntNode(String name, int bitWidth, IntegerStamp stamp, boolean signed) implements SmtNode {
 
     @Override

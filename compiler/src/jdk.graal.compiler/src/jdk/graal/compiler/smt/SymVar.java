@@ -6,6 +6,13 @@ import com.microsoft.z3.Expr;
 
 import java.util.List;
 
+/**
+ * A symbolic variable that carries a pre-built Z3 expression.
+ * Used as a placeholder for nodes whose translation is not fully determined,
+ * such as opaque function calls or loop phi nodes.
+ * Optional {@code sources} track the IR nodes the variable represents for debugging.
+ * @author Jakub Wolek
+ */
 public record SymVar(String debugName, Expr<?> expr, List<SmtNode> sources) implements SmtNode {
 
     public SymVar(String debugName, Expr<?> expr) {
