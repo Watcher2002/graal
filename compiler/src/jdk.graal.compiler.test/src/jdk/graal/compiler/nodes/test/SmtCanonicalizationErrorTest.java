@@ -2,6 +2,7 @@ package jdk.graal.compiler.nodes.test;
 
 import static org.junit.Assert.assertNotSame;
 
+import jdk.graal.compiler.core.common.type.FloatStamp;
 import jdk.graal.compiler.core.common.type.IntegerStamp;
 import jdk.graal.compiler.core.common.type.StampPair;
 import jdk.graal.compiler.nodes.ConstantNode;
@@ -17,6 +18,7 @@ import jdk.graal.compiler.nodes.calc.LeftShiftNode;
 import jdk.graal.compiler.nodes.calc.MulNode;
 import jdk.graal.compiler.nodes.calc.NegateNode;
 import jdk.graal.compiler.nodes.calc.NotNode;
+import jdk.graal.compiler.nodes.calc.RightShiftNode;
 import jdk.graal.compiler.nodes.calc.SignExtendNode;
 import jdk.graal.compiler.nodes.calc.SubNode;
 import jdk.graal.compiler.nodes.calc.UnsignedRightShiftNode;
@@ -47,10 +49,25 @@ import org.junit.Test;
  */
 public class SmtCanonicalizationErrorTest extends GraalCompilerTest {
 
-    private static final IntegerStamp INT32 = IntegerStamp.create(32, Integer.MIN_VALUE, Integer.MAX_VALUE);
+    private static final IntegerStamp INT32  = IntegerStamp.create(32, Integer.MIN_VALUE, Integer.MAX_VALUE);
+    private static final IntegerStamp INT64  = IntegerStamp.create(64, Long.MIN_VALUE, Long.MAX_VALUE);
+    private static final FloatStamp   FLOAT32 = FloatStamp.createUnrestricted(32);
+    private static final FloatStamp   FLOAT64 = FloatStamp.createUnrestricted(64);
 
     private static ParameterNode mkInt32Param(int index) {
         return new ParameterNode(index, StampPair.createSingle(INT32));
+    }
+
+    private static ParameterNode mkInt64Param(int index) {
+        return new ParameterNode(index, StampPair.createSingle(INT64));
+    }
+
+    private static ParameterNode mkFloat32Param(int index) {
+        return new ParameterNode(index, StampPair.createSingle(FLOAT32));
+    }
+
+    private static ParameterNode mkFloat64Param(int index) {
+        return new ParameterNode(index, StampPair.createSingle(FLOAT64));
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────
@@ -256,5 +273,359 @@ public class SmtCanonicalizationErrorTest extends GraalCompilerTest {
         assertNotSame("canonical() must return a different node (error should have fired)", before, after);
         assertFalse("SignExtendNode error: zero_ext(sign_ext(x,8→16),16→32) must be detected as wrong by SMT",
                 SmtCanonicalVerifier.verifyCanonicalization(before, after, debug, getDefaultHighTierContext()));
+    }
+
+    /**
+     * XorNode.canonical() folds {@code x ^ x} to {@code 0} (self-XOR identity).
+     * The injected error returns {@code x} instead of {@code 0}.
+     */
+    @Test
+    public void testXorSelfIdentityError() {
+        ParameterNode x = mkInt32Param(0);
+        XorNode before = new XorNode(x, x);
+
+        CanonicalizerTool tool = mkTool(errorOptions("Xor"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("XorNode error: x^x → x instead of 0 must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * XorNode.canonical() folds {@code x ^ −1} to {@code ~x} (XOR with all-ones).
+     * The injected error returns {@code x} instead of {@code ~x}.
+     */
+    @Test
+    public void testXorAllOnesError() {
+        ParameterNode x = mkInt32Param(0);
+        XorNode before = new XorNode(x, ConstantNode.forInt(-1));
+
+        CanonicalizerTool tool = mkTool(errorOptions("Xor"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("XorNode error: x^(−1) → x instead of ~x must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * SubNode.canonical() rewrites {@code 0 − x} to {@code −x} (negation).
+     * The injected error returns the constant {@code 0} instead.
+     */
+    @Test
+    public void testSubZeroMinusXError() {
+        ParameterNode x = mkInt32Param(0);
+        SubNode before = new SubNode(ConstantNode.forInt(0), x);
+
+        CanonicalizerTool tool = mkTool(errorOptions("Sub"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("SubNode error: 0−x → 0 instead of −x must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * SubNode.canonical() rewrites {@code x − (−3)} to {@code x + 3}.
+     * The injected error returns {@code x + 2} instead (off by one).
+     */
+    @Test
+    public void testSubNegativeConstError() {
+        SubNode before = new SubNode(mkInt32Param(0), ConstantNode.forInt(-3));
+
+        CanonicalizerTool tool = mkTool(errorOptions("Sub"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("SubNode error: x−(−3) → x+2 instead of x+3 must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * NegateNode.canonical() eliminates double negation: {@code −(−x)} to {@code x}.
+     * The injected error returns {@code −x} instead (one negation instead of none).
+     */
+    @Test
+    public void testNegateDoubleNegationError() {
+        ParameterNode x = mkInt32Param(0);
+        NegateNode before = new NegateNode(new NegateNode(x));
+
+        CanonicalizerTool tool = mkTool(errorOptions("Negate"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("NegateNode error: −(−x) → −x instead of x must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * NegateNode.canonical() rewrites {@code −(x >> 31)} to {@code x >>> 31}
+     * (arithmetic shift by sign-bit position becomes unsigned shift).
+     * The injected error returns the original {@code x >> 31} instead.
+     */
+    @Test
+    public void testNegateShiftToUnsignedError() {
+        ParameterNode x = mkInt32Param(0);
+        NegateNode before = new NegateNode(new RightShiftNode(x, ConstantNode.forInt(31)));
+
+        CanonicalizerTool tool = mkTool(errorOptions("Negate"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("NegateNode error: −(x>>31) → x>>31 instead of x>>>31 must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * NotNode.canonical() eliminates double bitwise negation: {@code ~(~x)} to {@code x}.
+     * The injected error returns {@code ~x} instead (one NOT instead of none).
+     */
+    @Test
+    public void testNotDoubleNegationError() {
+        ParameterNode x = mkInt32Param(0);
+        NotNode before = new NotNode(new NotNode(x));
+
+        CanonicalizerTool tool = mkTool(errorOptions("Not"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("NotNode error: ~(~x) → ~x instead of x must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * NotNode.canonical() rewrites {@code ~(x + (−1))} to {@code −x}
+     * (identity: {@code ~(x−1) = −x}).
+     * The injected error returns {@code x + (−1)} instead.
+     */
+    @Test
+    public void testNotAddMinusOneError() {
+        ParameterNode x = mkInt32Param(0);
+        NotNode before = new NotNode(new AddNode(x, ConstantNode.forInt(-1)));
+
+        CanonicalizerTool tool = mkTool(errorOptions("Not"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("NotNode error: ~(x+(−1)) → x+(−1) instead of −x must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * MulNode.canonical() strength-reduces {@code x * 8} to {@code x << 3}.
+     * The injected error uses shift amount {@code 4} instead of {@code 3}.
+     */
+    @Test
+    public void testMulByEightError() {
+        MulNode before = new MulNode(mkInt32Param(0), ConstantNode.forInt(8));
+
+        CanonicalizerTool tool = mkTool(errorOptions("Mul"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("MulNode error: x*8 → x<<4 instead of x<<3 must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * MulNode.canonical() strength-reduces {@code x * 256} to {@code x << 8}.
+     * The injected error uses shift amount {@code 9} instead of {@code 8}.
+     */
+    @Test
+    public void testMulBy256Error() {
+        MulNode before = new MulNode(mkInt32Param(0), ConstantNode.forInt(256));
+
+        CanonicalizerTool tool = mkTool(errorOptions("Mul"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("MulNode error: x*256 → x<<9 instead of x<<8 must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * LeftShiftNode.canonical() combines {@code (x << 1) << 1} into {@code x << 2}.
+     * The injected error uses shift amount {@code 1} instead of {@code 2}.
+     */
+    @Test
+    public void testLeftShiftOneOneError() {
+        ParameterNode x = mkInt32Param(0);
+        LeftShiftNode before = new LeftShiftNode(
+                new LeftShiftNode(x, ConstantNode.forInt(1)), ConstantNode.forInt(1));
+
+        CanonicalizerTool tool = mkTool(errorOptions("LeftShift"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("LeftShiftNode error: (x<<1)<<1 → x<<1 instead of x<<2 must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * LeftShiftNode.canonical() combines {@code (x << 3) << 2} into {@code x << 5}.
+     * The injected error uses shift amount {@code 4} instead of {@code 5}.
+     */
+    @Test
+    public void testLeftShiftAsymmetricError() {
+        ParameterNode x = mkInt32Param(0);
+        LeftShiftNode before = new LeftShiftNode(
+                new LeftShiftNode(x, ConstantNode.forInt(3)), ConstantNode.forInt(2));
+
+        CanonicalizerTool tool = mkTool(errorOptions("LeftShift"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("LeftShiftNode error: (x<<3)<<2 → x<<4 instead of x<<5 must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * UnsignedRightShiftNode.canonical() rewrites {@code (x << 24) >>> 24} to {@code x & 0xFF}.
+     * The injected error uses {@code 0x7F} (one fewer bit) as the mask.
+     */
+    @Test
+    public void testUrshByteMaskError() {
+        ParameterNode x = mkInt32Param(0);
+        ConstantNode c24 = ConstantNode.forInt(24);
+        UnsignedRightShiftNode before = new UnsignedRightShiftNode(new LeftShiftNode(x, c24), c24);
+
+        CanonicalizerTool tool = mkTool(errorOptions("UnsignedRightShift"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("UnsignedRightShiftNode error: (x<<24)>>>24 → x&0x7F instead of x&0xFF must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * UnsignedRightShiftNode.canonical() rewrites {@code (x << 1) >>> 1} to
+     * {@code x & 0x7FFFFFFF} (clears the sign bit).
+     * The injected error uses {@code 0x3FFFFFFF} (one fewer bit) as the mask.
+     */
+    @Test
+    public void testUrshSingleBitError() {
+        ParameterNode x = mkInt32Param(0);
+        ConstantNode c1 = ConstantNode.forInt(1);
+        UnsignedRightShiftNode before = new UnsignedRightShiftNode(new LeftShiftNode(x, c1), c1);
+
+        CanonicalizerTool tool = mkTool(errorOptions("UnsignedRightShift"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("UnsignedRightShiftNode error: (x<<1)>>>1 → x&0x3FFFFFFF instead of x&0x7FFFFFFF must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * AddNode.canonical() reassociates {@code 100 + (x + 200)} to {@code x + 300}.
+     * The injected error drops the outer constant and returns {@code x + 200} instead.
+     */
+    @Test
+    public void testAddLargeConstsError() {
+        ParameterNode x = mkInt32Param(0);
+        AddNode before = new AddNode(ConstantNode.forInt(100), new AddNode(x, ConstantNode.forInt(200)));
+
+        CanonicalizerTool tool = mkTool(errorOptions("Add"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("AddNode error: 100+(x+200) → x+200 instead of x+300 must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * SignExtendNode.canonical() chains {@code sign_ext(sign_ext(x, 16→32), 32→64)}
+     * into {@code sign_ext(x, 16→64)}.
+     * The injected error returns {@code zero_ext(sign_ext(x, 16→32), 32→64)} instead,
+     * which differs for negative {@code x} (e.g., {@code x = −1} gives 4294967295 vs −1).
+     */
+    @Test
+    public void testSignExtend16To64Error() {
+        OptionValues opts = getInitialOptions();
+        DebugContext debug = getDebugContext();
+        StructuredGraph graph = new StructuredGraph.Builder(opts, debug, AllowAssumptions.YES).build();
+
+        IntegerStamp stamp16 = IntegerStamp.create(16, Short.MIN_VALUE, Short.MAX_VALUE);
+        ParameterNode param = graph.addOrUnique(new ParameterNode(0, StampPair.createSingle(stamp16)));
+
+        SignExtendNode innerSext = new SignExtendNode(param, 16, 32);
+        SignExtendNode before = new SignExtendNode(innerSext, 32, 64);
+
+        CanonicalizerTool tool = mkTool(errorOptions("SignExtend"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("SignExtendNode error: zero_ext(sext(x,16→32),32→64) differs from sext(x,16→64) for negative x",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, debug, getDefaultHighTierContext()));
+    }
+
+    /**
+     * NegateNode.canonical() eliminates double negation on a {@code float} operand:
+     * {@code −(−x)} to {@code x}.
+     * The injected error returns {@code −x} instead (one negation instead of none).
+     */
+    @Test
+    public void testNegateFloatDoubleNegError() {
+        ParameterNode x = mkFloat32Param(0);
+        NegateNode before = new NegateNode(new NegateNode(x));
+
+        CanonicalizerTool tool = mkTool(errorOptions("Negate"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("NegateNode (float) error: −(−x) → −x instead of x must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * NegateNode.canonical() eliminates double negation on a {@code double} operand:
+     * {@code −(−x)} to {@code x}.
+     * The injected error returns {@code −x} instead.
+     */
+    @Test
+    public void testNegateDoubleDoubleNegError() {
+        ParameterNode x = mkFloat64Param(0);
+        NegateNode before = new NegateNode(new NegateNode(x));
+
+        CanonicalizerTool tool = mkTool(errorOptions("Negate"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("NegateNode (double) error: −(−x) → −x instead of x must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * MulNode.canonical() strength-reduces {@code x * 4L} (long) to {@code x << 2}.
+     * The injected error uses shift amount {@code 3} instead of {@code 2}.
+     */
+    @Test
+    public void testMulLongPow2Error() {
+        MulNode before = new MulNode(mkInt64Param(0), ConstantNode.forLong(4L));
+
+        CanonicalizerTool tool = mkTool(errorOptions("Mul"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("MulNode (long) error: x*4L → x<<3 instead of x<<2 must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
+    }
+
+    /**
+     * XorNode.canonical() folds {@code x ^ ~x} to {@code −1L} on 64-bit long operands.
+     * The injected error returns {@code 0L} instead.
+     */
+    @Test
+    public void testXorLongSelfNegationError() {
+        ParameterNode x = mkInt64Param(0);
+        XorNode before = new XorNode(x, new NotNode(x));
+
+        CanonicalizerTool tool = mkTool(errorOptions("Xor"));
+        ValueNode after = before.canonical(tool);
+
+        assertNotSame("canonical() must return a different node (error should have fired)", before, after);
+        assertFalse("XorNode (long) error: x^~x → 0L instead of −1L must be detected as wrong by SMT",
+                SmtCanonicalVerifier.verifyCanonicalization(before, after, getDebugContext(), getDefaultHighTierContext()));
     }
 }
