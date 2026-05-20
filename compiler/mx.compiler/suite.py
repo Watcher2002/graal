@@ -95,10 +95,9 @@ suite = {
       "urls" : ["https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/batik-all-1.7.jar"],
     },
 
-    # Fix ASAP
     "Z3": {
       "digest": "sha512:ee0ff399d54ee4652b9ff4dd0a4a94332d62ae6c34a3eec3fb3c814fa8cc54aedc9acc8dd1e045870c9c4aa00504c441dcf099ae8cc1a9527afb483f0f80e325",
-      "urls": ["file:///home/kubko/school/thesis/z3-4.13.3-x64-glibc-2.35/bin/com.microsoft.z3.jar"],
+      "urls": ["https://github.com/Watcher2002/graal/releases/download/artifact/com.microsoft.z3.jar"],
     },
 
     "HSDIS" : {
