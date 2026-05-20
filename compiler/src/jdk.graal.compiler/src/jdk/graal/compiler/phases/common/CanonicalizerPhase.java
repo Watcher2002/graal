@@ -35,6 +35,7 @@ import java.util.EnumSet;
 import java.util.Objects;
 import java.util.Optional;
 
+import jdk.graal.compiler.smt.SmtCanonicalVerifier;
 import org.graalvm.collections.EconomicSet;
 import org.graalvm.collections.Pair;
 
@@ -103,6 +104,11 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
         // @formatter:off
         @Option(help = "Verify if the current graph state allows GVN to be performed.", type = OptionType.Debug)
         public static final OptionKey<Boolean> CanonicalizerVerifyGVNAllowed = new OptionKey<>(true);
+        @Option(help = "Verify each canonicalization rewrite with SMT-based semantic equivalence " +
+                "checking. Requires Z3 native libraries on java.library.path. " +
+                "Only active when JVM assertions are also enabled (-ea).",
+                type = OptionType.Debug)
+        public static final OptionKey<Boolean> VerifyCanonicalizationWithSMT = new OptionKey<>(false);
         // @formatter:on
     }
 
@@ -628,6 +634,11 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                  * as JVMCI detects these and fails gracefully.
                  */
                 ConstantNode stampConstant = ConstantNode.forConstant(valueNode.stamp(NodeView.DEFAULT), constant, tool.context.getMetaAccess(), graph);
+
+                assert !Options.VerifyCanonicalizationWithSMT.getValue(tool.getOptions()) ||
+                        SmtCanonicalVerifier.verifyStampFold(valueNode, stampConstant, tool.debug, tool) :
+                        SmtCanonicalVerifier.counterexampleMessage();
+
                 valueNode.replaceAtUsages(stampConstant, InputType.Value);
                 GraphUtil.tryKillUnused(valueNode);
                 graph.getOptimizationLog().report(CanonicalizerPhase.class, "ConstantStampReplacement", valueNode);
@@ -706,6 +717,9 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                 } catch (Throwable e) {
                     throw new GraalGraphError(e).addContext(node);
                 }
+                assert !Options.VerifyCanonicalizationWithSMT.getValue(tool.getOptions()) ||
+                        SmtCanonicalVerifier.verifyCanonicalization(node, canonical, tool.debug, tool) :
+                        SmtCanonicalVerifier.counterexampleMessage();
                 if (performReplacement(node, canonical, tool)) {
                     Node finalCanonical = canonical;
                     StructuredGraph graph = (StructuredGraph) node.graph();
@@ -734,7 +748,7 @@ public class CanonicalizerPhase extends BasePhase<CoreProviders> {
                     COUNTER_SIMPLIFICATION_CONSIDERED_NODES.increment(tool.debug);
 
                     int modCount = node.graph().getEdgeModificationCount();
-                    ((Simplifiable) node).simplify(tool);
+                    ((Simplifiable) node).simplify(tool); // TODO: Check also here
                     if (node.isDeleted() || modCount != node.graph().getEdgeModificationCount()) {
                         StructuredGraph graph = (StructuredGraph) node.graph();
                         graph.getOptimizationLog().report(DebugContext.VERY_DETAILED_LEVEL, CanonicalizerPhase.class, "CfgSimplification", node);

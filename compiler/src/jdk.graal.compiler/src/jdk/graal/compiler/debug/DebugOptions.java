@@ -289,6 +289,9 @@ public class DebugOptions {
 
     @Option(help = "Record the compilations matching the method filter for replay compilation.", type = OptionType.Debug)
     public static final OptionKey<String> RecordForReplay = new OptionKey<>(null);
+    @Option(help = "Introduce changes that break canonicalization imto selected nodes", type = OptionType.Debug)
+    public static final OptionKey<String> BreakCanonicalization = new OptionKey<>("");
+
     // @formatter:on
 
     /**

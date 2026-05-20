@@ -39,6 +39,7 @@ import jdk.graal.compiler.nodes.NodeView;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
 import jdk.graal.compiler.nodes.spi.NodeLIRBuilderTool;
+import jdk.graal.compiler.smt.SMTUtils;
 import jdk.vm.ci.code.CodeUtil;
 import jdk.vm.ci.meta.Constant;
 import jdk.vm.ci.meta.JavaKind;
@@ -76,7 +77,16 @@ public final class LeftShiftNode extends ShiftNode<Shl> {
             return ret;
         }
 
-        return canonical(this, getArithmeticOp(), stamp(NodeView.DEFAULT), forX, forY);
+        ValueNode result = canonical(this, getArithmeticOp(), stamp(NodeView.DEFAULT), forX, forY);
+        if (result != this && SMTUtils.introduceError("LeftShift", tool)) {
+            // Error: if two shifts were combined into one, under-shift by 1
+            if (result instanceof LeftShiftNode lsh && lsh.getY().isJavaConstant() &&
+                    forX instanceof LeftShiftNode) {
+                return new LeftShiftNode(lsh.getX(), ConstantNode.forInt(lsh.getY().asJavaConstant().asInt() - 1));
+            }
+            return forX;
+        }
+        return result;
     }
 
     /**

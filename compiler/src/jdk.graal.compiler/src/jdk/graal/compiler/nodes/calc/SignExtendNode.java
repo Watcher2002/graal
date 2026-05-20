@@ -41,6 +41,7 @@ import jdk.graal.compiler.nodes.NodeView;
 import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
 import jdk.graal.compiler.nodes.spi.NodeLIRBuilderTool;
+import jdk.graal.compiler.smt.SMTUtils;
 import jdk.vm.ci.code.CodeUtil;
 
 /**
@@ -100,8 +101,17 @@ public final class SignExtendNode extends IntegerConvertNode<SignExtend> {
         if (ret != this) {
             return ret;
         }
-
-        return canonical(this, forValue, getInputBits(), getResultBits(), view);
+        ValueNode result = canonical(this, forValue, getInputBits(), getResultBits(), view);
+        if (result != this && SMTUtils.introduceError("SignExtend", tool)) {
+            // Error: promote to ZeroExtend using bit position one above the sign bit (always zero),
+            // so any sign-extend whose upper stamp bit is clear gets wrongly promoted
+            IntegerStamp inputStamp = forValue.stamp(view) instanceof IntegerStamp is ? is : null;
+            if (inputStamp != null && (inputStamp.mayBeSet() & (1L << getInputBits())) == 0L) {
+                return ZeroExtendNode.create(forValue, getInputBits(), getResultBits(), view);
+            }
+            return forValue;
+        }
+        return result;
     }
 
     private static ValueNode canonical(SignExtendNode self, ValueNode forValue, int inputBits, int resultBits, NodeView view) {

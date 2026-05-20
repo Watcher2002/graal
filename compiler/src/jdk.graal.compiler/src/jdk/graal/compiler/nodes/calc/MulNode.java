@@ -41,6 +41,7 @@ import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.Canonicalizable;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
 import jdk.graal.compiler.nodes.spi.NodeLIRBuilderTool;
+import jdk.graal.compiler.smt.SMTUtils;
 import jdk.vm.ci.code.CodeUtil;
 import jdk.vm.ci.meta.Constant;
 import jdk.vm.ci.meta.PrimitiveConstant;
@@ -101,7 +102,15 @@ public class MulNode extends BinaryArithmeticNode<Mul> implements NarrowableArit
 
         BinaryOp<Mul> op = getOp(forX, forY);
         NodeView view = NodeView.from(tool);
-        return canonical(this, op, stamp(view), forX, forY, view);
+        ValueNode result = canonical(this, op, stamp(view), forX, forY, view);
+        if (result != this && SMTUtils.introduceError("Mul", tool)) {
+            // Error: if strength-reduced to a left shift, shift by one extra position
+            if (result instanceof LeftShiftNode lsh && lsh.getY().isJavaConstant()) {
+                return new LeftShiftNode(lsh.getX(), ConstantNode.forInt(lsh.getY().asJavaConstant().asInt() + 1));
+            }
+            return forX;
+        }
+        return result;
     }
 
     private static ValueNode canonical(MulNode self, BinaryOp<Mul> op, Stamp stamp, ValueNode forX, ValueNode forY, NodeView view) {

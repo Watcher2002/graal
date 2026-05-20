@@ -39,6 +39,7 @@ import jdk.graal.compiler.nodes.spi.Canonicalizable;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
 import jdk.graal.compiler.nodes.spi.NodeLIRBuilderTool;
 import jdk.graal.compiler.nodes.util.GraphUtil;
+import jdk.graal.compiler.smt.SMTUtils;
 import jdk.graal.compiler.vector.nodes.simd.SimdConstant;
 import jdk.vm.ci.code.CodeUtil;
 import jdk.vm.ci.meta.Constant;
@@ -89,7 +90,15 @@ public final class XorNode extends BinaryArithmeticNode<Xor> implements Canonica
         }
 
         NodeView view = NodeView.from(tool);
-        return canonical(this, getOp(forX, forY), stamp(NodeView.DEFAULT), forX, forY, view);
+        ValueNode result = canonical(this, getOp(forX, forY), stamp(NodeView.DEFAULT), forX, forY, view);
+        if (result != this && SMTUtils.introduceError("Xor", tool)) {
+            // Error: x ^ ~x should fold to -1; return 0 instead
+            if (result instanceof ConstantNode cn && cn.isJavaConstant() && cn.asJavaConstant().asLong() == -1L) {
+                return ConstantNode.forIntegerStamp(forX.stamp(view), 0L);
+            }
+            return forX;
+        }
+        return result;
     }
 
     private static ValueNode canonical(XorNode self, BinaryOp<Xor> op, Stamp stamp, ValueNode forX, ValueNode forY, NodeView view) {

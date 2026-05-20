@@ -1,0 +1,1089 @@
+package jdk.graal.compiler.smt;
+
+import com.microsoft.z3.BitVecExpr;
+import com.microsoft.z3.BoolExpr;
+import com.microsoft.z3.Context;
+import com.microsoft.z3.Expr;
+import com.microsoft.z3.FPExpr;
+import com.microsoft.z3.FPRMSort;
+import com.microsoft.z3.FPSort;
+import com.microsoft.z3.FuncDecl;
+import com.microsoft.z3.Sort;
+import jdk.graal.compiler.core.common.calc.FloatConvert;
+import jdk.graal.compiler.core.common.type.IntegerStamp;
+import jdk.graal.compiler.core.common.type.PrimitiveStamp;
+import jdk.graal.compiler.graph.Node;
+import jdk.graal.compiler.nodes.ConstantNode;
+import jdk.graal.compiler.nodes.GuardedValueNode;
+import jdk.graal.compiler.nodes.LogicConstantNode;
+import jdk.graal.compiler.nodes.LogicNegationNode;
+import jdk.graal.compiler.nodes.LogicNode;
+import jdk.graal.compiler.nodes.LoopBeginNode;
+import jdk.graal.compiler.nodes.NodeView;
+import jdk.graal.compiler.nodes.ParameterNode;
+import jdk.graal.compiler.nodes.PiNode;
+import jdk.graal.compiler.nodes.ShortCircuitOrNode;
+import jdk.graal.compiler.nodes.ValueNode;
+import jdk.graal.compiler.nodes.ValueProxyNode;
+import jdk.graal.compiler.nodes.ValuePhiNode;
+import jdk.graal.compiler.nodes.calc.AbsNode;
+import jdk.graal.compiler.nodes.calc.AddNode;
+import jdk.graal.compiler.nodes.calc.AndNode;
+import jdk.graal.compiler.nodes.calc.BinaryNode;
+import jdk.graal.compiler.nodes.calc.ConditionalNode;
+import jdk.graal.compiler.nodes.calc.FloatConvertNode;
+import jdk.graal.compiler.nodes.calc.FloatEqualsNode;
+import jdk.graal.compiler.nodes.calc.FloatLessThanNode;
+import jdk.graal.compiler.nodes.calc.FusedMultiplyAddNode;
+import jdk.graal.compiler.nodes.calc.IntegerBelowNode;
+import jdk.graal.compiler.nodes.calc.IntegerEqualsNode;
+import jdk.graal.compiler.nodes.calc.IntegerLessThanNode;
+import jdk.graal.compiler.nodes.calc.LeftShiftNode;
+import jdk.graal.compiler.nodes.calc.MaxNode;
+import jdk.graal.compiler.nodes.calc.MinNode;
+import jdk.graal.compiler.nodes.calc.MulNode;
+import jdk.graal.compiler.nodes.calc.NarrowNode;
+import jdk.graal.compiler.nodes.calc.NegateNode;
+import jdk.graal.compiler.nodes.calc.NotNode;
+import jdk.graal.compiler.nodes.calc.OrNode;
+import jdk.graal.compiler.nodes.calc.ReinterpretNode;
+import jdk.graal.compiler.nodes.calc.RightShiftNode;
+import jdk.graal.compiler.nodes.calc.SignExtendNode;
+import jdk.graal.compiler.nodes.calc.SignedDivNode;
+import jdk.graal.compiler.nodes.calc.SignedRemNode;
+import jdk.graal.compiler.nodes.calc.SqrtNode;
+import jdk.graal.compiler.nodes.calc.SubNode;
+import jdk.graal.compiler.nodes.calc.UnsignedDivNode;
+import jdk.graal.compiler.nodes.calc.IntegerTestNode;
+import jdk.graal.compiler.nodes.calc.IsNullNode;
+import jdk.graal.compiler.nodes.calc.RemNode;
+import jdk.graal.compiler.nodes.calc.RoundNode;
+import jdk.graal.compiler.nodes.calc.SignumNode;
+import jdk.graal.compiler.replacements.nodes.BitCountNode;
+import jdk.graal.compiler.replacements.nodes.CountLeadingZerosNode;
+import jdk.graal.compiler.replacements.nodes.CountTrailingZerosNode;
+import jdk.graal.compiler.replacements.nodes.ReverseBitsNode;
+import jdk.graal.compiler.replacements.nodes.ReverseBytesNode;
+import jdk.graal.compiler.replacements.nodes.arithmetic.IntegerAddExactOverflowNode;
+import jdk.graal.compiler.replacements.nodes.arithmetic.IntegerMulExactNode;
+import jdk.graal.compiler.replacements.nodes.arithmetic.IntegerMulExactOverflowNode;
+import jdk.graal.compiler.replacements.nodes.arithmetic.IntegerNegExactOverflowNode;
+import jdk.graal.compiler.replacements.nodes.arithmetic.IntegerSubExactOverflowNode;
+import jdk.graal.compiler.nodes.calc.UnsignedMaxNode;
+import jdk.graal.compiler.nodes.calc.UnsignedMinNode;
+import jdk.graal.compiler.nodes.calc.UnsignedRemNode;
+import jdk.graal.compiler.nodes.calc.UnsignedRightShiftNode;
+import jdk.graal.compiler.nodes.calc.XorNode;
+import jdk.graal.compiler.nodes.calc.ZeroExtendNode;
+import jdk.graal.compiler.nodes.java.LoadFieldNode;
+import jdk.graal.compiler.nodes.java.LoadIndexedNode;
+import jdk.graal.compiler.nodes.type.StampTool;
+import jdk.vm.ci.code.CodeUtil;
+import jdk.vm.ci.meta.Constant;
+import jdk.vm.ci.meta.ConstantReflectionProvider;
+import jdk.vm.ci.meta.JavaConstant;
+import jdk.vm.ci.meta.JavaKind;
+import jdk.vm.ci.meta.PrimitiveConstant;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Translates Graal IR {@link jdk.graal.compiler.nodes.ValueNode}s into Z3 SMT expressions.
+ * Uses memoized dispatch over node types to handle integer and floating-point arithmetic,
+ * comparisons, bit manipulation, phi nodes, and opaque operations.
+ * @author Jakub Wolek
+ */
+public final class IRToSmtTranslator {
+
+    private final Context ctx;
+    private final PathCondition pathCondition;
+    private final ConstantReflectionProvider constantReflection;
+    private Map<Node, SmtNode> memo;
+    private final Map<Node, Integer> nodeIds = new IdentityHashMap<>();
+    private int nextNodeId = 0;
+    private final Map<String, FuncDecl<?>> ufCache = new HashMap<>();
+
+    public IRToSmtTranslator(Context ctx, PathCondition pathCondition, ConstantReflectionProvider constantReflection) {
+        this.ctx = ctx;
+        this.pathCondition = pathCondition;
+        this.constantReflection = constantReflection;
+
+    }
+
+    public sealed interface TranslationResult
+            permits TranslationResult.Ok, TranslationResult.Untranslatable {
+        record Ok(SmtNode node) implements TranslationResult {
+        }
+
+        record Untranslatable(String reason) implements TranslationResult {
+        }
+    }
+
+    public TranslationResult translate(ValueNode node) {
+        setMemo(new IdentityHashMap<>());
+        try {
+            return new TranslationResult.Ok(translateNode(node));
+        } catch (UntranslatableException e) {
+            return new TranslationResult.Untranslatable(e.getMessage());
+        }
+    }
+
+    private void setMemo(IdentityHashMap<Node, SmtNode> memo) {
+        this.memo = memo;
+    }
+
+    private SmtNode translateNode(ValueNode node) {
+        SmtNode cached = memo.get(node);
+        if (cached != null) {
+            return cached;
+        }
+
+        SmtNode result = switch (node) {
+
+            // ── Constants ─────────────────────────────────────────────────────
+            case ConstantNode cn -> translateConstant(cn);
+
+            // ── Parameters ───────────────────────────────────────────────────
+            case ParameterNode pn -> translateParameter(pn);
+
+            // ── Exact integer arithmetic (result nodes) ───────────────────────
+            case IntegerMulExactNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.MUL);
+
+            // ── Integer / float binary arithmetic ─────────────────────────────
+            case AddNode n -> translateBinaryArith(n.getX(), n.getY(), n);
+            case SubNode n -> translateBinaryArith(n.getX(), n.getY(), n);
+            case MulNode n -> translateBinaryArith(n.getX(), n.getY(), n);
+            case NotNode n -> translateNot(n);
+            case FusedMultiplyAddNode n -> translateFusedMultiplyAdd(n);
+
+            // ── Integer-only arithmetic ────────────────────────────────────────
+            case SignedDivNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.SDIV);
+            case UnsignedDivNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.UDIV);
+            case SignedRemNode n -> translateSignedRem(n);
+            case UnsignedRemNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.UREM);
+
+            // ── Bitwise / shifts (integer only) ───────────────────────────────
+            case AndNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.AND);
+            case OrNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.OR);
+            case XorNode n -> bvBinOp(n.getX(), n.getY(), BitVecOp.XOR);
+
+            case LeftShiftNode n -> translateJavaShift(n, n.getX(), n.getY(), BitVecOp.SHL);
+            case RightShiftNode n -> translateJavaShift(n, n.getX(), n.getY(), BitVecOp.ASHR);
+            case UnsignedRightShiftNode n -> translateJavaShift(n, n.getX(), n.getY(), BitVecOp.LSHR);
+
+            // ── Negation (int and float) ───────────────────────────────────────
+            case NegateNode n -> translateNegate(n);
+
+            // ── Abs (int and float) ───────────────────────────────────────────
+            case AbsNode n -> translateAbs(n);
+
+            // ── Bit manipulation (integer only) ───────────────────────────────
+            case BitCountNode n -> translateBitCount(n);
+            case CountLeadingZerosNode n -> translateCountLeadingZeros(n);
+            case CountTrailingZerosNode n -> translateCountTrailingZeros(n);
+            case ReverseBitsNode n -> translateReverseBits(n);
+            case ReverseBytesNode n -> translateReverseBytes(n);
+
+            // ── Signum (float only) ───────────────────────────────────────────
+            case SignumNode n -> translateSignum(n);
+
+            // ── Min/Max ───────────────────────────────────────────────────────
+            case MinNode n -> translateMinMax(n.getX(), n.getY(), CmpOp.SLT, true);
+            case MaxNode n -> translateMinMax(n.getX(), n.getY(), CmpOp.SLT, false);
+            case UnsignedMinNode n -> translateMinMax(n.getX(), n.getY(), CmpOp.ULT, true);
+            case UnsignedMaxNode n -> translateMinMax(n.getX(), n.getY(), CmpOp.ULT, false);
+
+            // ── Sqrt (float only) ─────────────────────────────────────────────
+            case SqrtNode n -> translateSqrt(n);
+
+            // ── Float rounding ────────────────────────────────────────────────
+            case RoundNode n -> translateRound(n);
+
+            // ── Float remainder (Java's % on floats/doubles) ──────────────────
+            case RemNode n -> translateFpRem(n);
+
+            // ── Integer comparisons (return LogicNode / Bool) ──────────────────
+            case IntegerLessThanNode n -> bvCmp(n.getX(), n.getY(), CmpOp.SLT);
+            case IntegerBelowNode n -> bvCmp(n.getX(), n.getY(), CmpOp.ULT);
+            case IntegerEqualsNode n -> bvCmp(n.getX(), n.getY(), CmpOp.EQ);
+            case IntegerTestNode n -> translateIntegerTest(n);
+
+            // ── Exact arithmetic overflow detectors (LogicNode / Bool) ─────────
+            case IntegerAddExactOverflowNode n -> translateAddExactOverflow(n);
+            case IntegerSubExactOverflowNode n -> translateSubExactOverflow(n);
+            case IntegerMulExactOverflowNode n -> translateMulExactOverflow(n);
+            case IntegerNegExactOverflowNode n -> translateNegExactOverflow(n);
+
+            // ── Float comparisons ──────────────────────────────────────────────
+            case FloatEqualsNode n -> fpEq(n.getX(), n.getY());
+            case FloatLessThanNode n -> fpLt(n.getX(), n.getY(), n.unorderedIsTrue());
+
+            // ── Boolean logic ──────────────────────────────────────────────────
+            case LogicNegationNode n -> new BoolUnOp(translateNode(asValue(n.getValue())), BoolOp.NOT);
+            case LogicConstantNode n -> new SymVar(String.valueOf(n.getValue()),
+                    n.getValue() ? ctx.mkTrue() : ctx.mkFalse());
+
+            // ShortCircuitOrNode has LogicNode inputs, not ValueNode inputs.
+            case ShortCircuitOrNode n -> translateShortCircuitOr(n);
+
+            case IsNullNode n -> translateIsNull(n);
+
+            // ── Conditional / ternary ──────────────────────────────────────────
+            case ConditionalNode n -> new ITENode(
+                    translateLogic(n.condition()),
+                    translateNode(n.trueValue()),
+                    translateNode(n.falseValue()));
+
+            // ── Width conversions ──────────────────────────────────────────────
+            case NarrowNode n -> translateNarrow(n);
+            case SignExtendNode n -> translateSignExtend(n);
+            case ZeroExtendNode n -> translateZeroExtend(n);
+
+            // ── Float ↔ int conversion ─────────────────────────────────────────
+            case FloatConvertNode n -> translateFloatConvert(n);
+
+            // ── Bit reinterpretation (e.g. Float.floatToRawIntBits) ────────────
+            case ReinterpretNode n -> translateReinterpret(n);
+
+            // ── Phi ────────────────────────────────────────────────────────────
+            case ValuePhiNode n -> translatePhi(n);
+
+            // ── Type narrowing / stamp ─────────────────────────────────────────
+            case PiNode n -> translatePi(n);
+            case GuardedValueNode n -> translateNode(n.object());
+            case ValueProxyNode n -> translateNode(n.value());
+
+            // ── Memory reads — opaque UF ───────────────────────────────────────
+            case LoadFieldNode n -> translateLoadField(n);
+            case LoadIndexedNode n -> translateLoadIndexed(n);
+
+            // ── Anything else ──────────────────────────────────────────────────
+            default -> throw new UntranslatableException(
+                    "No SMT translation for " + node.getClass().getSimpleName()
+                            + " (id=" + stableNodeId(node) + ")");
+        };
+
+        SmtNode stamped = new StampedNode(result, node.stamp(NodeView.DEFAULT));
+        memo.put(node, stamped);
+        return stamped;
+    }
+
+    private int stableNodeId(Node node) {
+        return nodeIds.computeIfAbsent(node, n -> nextNodeId++);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Dispatches AddNode/SubNode/MulNode on stamp kind.
+     * In Graal, the same AST node class is used for int and float arithmetic;
+     * the stamp records which kind it actually is.
+     */
+    private SmtNode translateBinaryArith(ValueNode l, ValueNode r, BinaryNode n) {
+        JavaKind kind = n.stamp(NodeView.DEFAULT).getStackKind();
+        return switch (kind) {
+            case Int, Long -> {
+                BitVecOp op = n instanceof AddNode ? BitVecOp.ADD
+                        : n instanceof SubNode ? BitVecOp.SUB
+                        : BitVecOp.MUL;
+                yield bvBinOp(l, r, op);
+            }
+            case Float, Double -> {
+                FpOp op = n instanceof AddNode ? FpOp.FADD
+                        : n instanceof SubNode ? FpOp.FSUB
+                        : FpOp.FMUL;
+                yield fpBinOp(l, r, op);
+            }
+            default -> throw new UntranslatableException(
+                    "Unexpected kind " + kind + " on " + n.getClass().getSimpleName());
+        };
+    }
+
+    /**
+     * Amother place where the check needs to be manually inserted because the
+     * optimization is based on a sprcific property of the graph, the solver
+     * can't be expected to figure out on its own.
+     *
+     * When the divisor is a constant power of 2 and all usages only compare as
+     * bvurem instead of bvsrem. This is sound because for power-of-2 y:
+     * bvsrem(x, y) == 0 if bvurem(x, y) == 0.
+     */
+    private SmtNode translateSignedRem(SignedRemNode n) {
+        ValueNode yNode = n.getY();
+        if (yNode.isConstant()) {
+            long constY = yNode.asJavaConstant().asLong();
+            if (constY > 0 && CodeUtil.isPowerOf2(constY) && allUsagesCompareAgainstZero(n)) {
+                return bvBinOp(n.getX(), yNode, BitVecOp.UREM);
+            }
+        }
+        return bvBinOp(n.getX(), yNode, BitVecOp.SREM);
+    }
+
+    /**
+     * Returns true if all usages of the node are IntegerEqualsNode comparisons against zero.
+     */
+    private static boolean allUsagesCompareAgainstZero(ValueNode node) {
+        if (!node.hasUsages()) {
+            return false;
+        }
+        for (Node usage : node.usages()) {
+            if (usage instanceof IntegerEqualsNode equalsNode) {
+                ValueNode other = equalsNode.getY() == node ? equalsNode.getX() : equalsNode.getY();
+                if (other instanceof ConstantNode constantNode) {
+                    Constant constant = constantNode.asConstant();
+                    if (constant instanceof PrimitiveConstant && ((PrimitiveConstant) constant).asLong() == 0) {
+                        continue;
+                    }
+                }
+            }
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * NegateNode is a UnaryArithmeticNode — dispatches on stamp kind.
+     */
+    private SmtNode translateNegate(NegateNode n) {
+        JavaKind kind = n.stamp(NodeView.DEFAULT).getStackKind();
+        SmtNode inner = translateNode(n.getValue());
+        return switch (kind) {
+            case Int, Long -> new BitVecUnOp(inner, BitVecOp.NEG);
+            case Float, Double -> new FpUnOp(inner, FpOp.FNEG);
+            default -> throw new UntranslatableException("NegateNode: unknown kind " + kind);
+        };
+    }
+
+    private SmtNode translateAbs(AbsNode n) {
+        JavaKind kind = n.stamp(NodeView.DEFAULT).getStackKind();
+        SmtNode x = translateNode(n.getValue());
+        return switch (kind) {
+            case Int, Long -> {
+                int bits = kind == JavaKind.Int ? 32 : 64;
+                SmtNode zero = new SymVar("0", ctx.mkBV(0, bits));
+                SmtNode neg = new BitVecUnOp(x, BitVecOp.NEG);
+                SmtNode lt = new BitVecCmp(x, zero, CmpOp.SLT);
+                yield new ITENode(lt, neg, x);
+            }
+            case Float, Double -> new FpUnOp(x, FpOp.FABS);
+            default -> throw new UntranslatableException("AbsNode: unknown kind " + kind);
+        };
+    }
+
+    private SmtNode translateMinMax(ValueNode xNode, ValueNode yNode, CmpOp cmpOp, boolean isMin) {
+        JavaKind kind = xNode.stamp(NodeView.DEFAULT).getStackKind();
+        SmtNode x = translateNode(xNode);
+        SmtNode y = translateNode(yNode);
+        if (kind == JavaKind.Float || kind == JavaKind.Double) {
+            FPExpr fx = (FPExpr) x.toZ3(ctx);
+            FPExpr fy = (FPExpr) y.toZ3(ctx);
+            FPSort sort = fx.getSort();
+            BoolExpr eitherNaN = ctx.mkOr(ctx.mkFPIsNaN(fx), ctx.mkFPIsNaN(fy));
+            // When fp.gt and fp.lt are both false (i.e. +0.0 vs -0.0), Java's
+            // Math.max returns +0.0 and Math.min returns -0.0.
+            Expr<?> ordered;
+            if (isMin) {
+                Expr<?> tieBreak = ctx.mkITE(ctx.mkFPIsPositive(fx), fy, fx);
+                ordered = ctx.mkITE(ctx.mkFPLt(fx, fy), fx,
+                        ctx.mkITE(ctx.mkFPGt(fx, fy), fy, tieBreak));
+            } else {
+                Expr<?> tieBreak = ctx.mkITE(ctx.mkFPIsNegative(fx), fy, fx);
+                ordered = ctx.mkITE(ctx.mkFPGt(fx, fy), fx,
+                        ctx.mkITE(ctx.mkFPLt(fx, fy), fy, tieBreak));
+            }
+            return new SymVar("fpMinMax_" + stableNodeId(xNode),
+                    ctx.mkITE(eitherNaN, ctx.mkFPNaN(sort), ordered),
+                    List.of(x, y));
+        }
+        SmtNode cmp = new BitVecCmp(x, y, cmpOp);
+        return isMin ? new ITENode(cmp, x, y) : new ITENode(cmp, y, x);
+    }
+
+    private SmtNode translateFusedMultiplyAdd(FusedMultiplyAddNode n) {
+        SmtNode x = translateNode(n.getX());
+        SmtNode y = translateNode(n.getY());
+        SmtNode z = translateNode(n.getZ());
+        FPExpr fx = (FPExpr) x.toZ3(ctx);
+        FPExpr fy = (FPExpr) y.toZ3(ctx);
+        FPExpr fz = (FPExpr) z.toZ3(ctx);
+        return new SymVar("fma_" + stableNodeId(n),
+                ctx.mkFPFMA(ctx.mkFPRoundNearestTiesToEven(), fx, fy, fz),
+                List.of(x, y, z));
+    }
+
+    private SmtNode translateSqrt(SqrtNode n) {
+        // Needs to be as a separate condition which recognizes the F2D->Sqrt->D2F
+        // pattern. While the intermediate values (sqrt_double(F2D(x) and F2D(sqrt_float(x))
+        // may differ, IEEE 754 guarantees no double-rounding for sqrt when
+        // double precision ≥ 2× float precision, thus resulting in equivalence.
+        if (n.getValue() instanceof FloatConvertNode f2d
+                && f2d.getFloatConvert() == FloatConvert.F2D
+                && n.hasExactlyOneUsage()
+                && n.singleUsage() instanceof FloatConvertNode d2f
+                && d2f.getFloatConvert() == FloatConvert.D2F) {
+            SmtNode floatInput = translateNode(f2d.getValue());
+            SmtNode floatSqrt = new FpUnOp(floatInput, FpOp.FSQRT);
+            FPExpr sqrtExpr = (FPExpr) floatSqrt.toZ3(ctx);
+            return new SymVar("sqrt_f2d_" + stableNodeId(n),
+                    ctx.mkFPToFP(ctx.mkFPRoundNearestTiesToEven(), sqrtExpr, ctx.mkFPSort64()),
+                    List.of(floatSqrt));
+        }
+        return fpUnOp(n.getValue(), FpOp.FSQRT);
+    }
+
+    private SmtNode translateRound(RoundNode n) {
+        SmtNode input = translateNode(n.getValue());
+        FPExpr fp = (FPExpr) input.toZ3(ctx);
+        Expr<FPRMSort> rm = switch (n.mode()) {
+            case DOWN     -> ctx.mkFPRoundTowardNegative();
+            case NEAREST  -> ctx.mkFPRoundNearestTiesToEven();
+            case UP       -> ctx.mkFPRoundTowardPositive();
+            case TRUNCATE -> ctx.mkFPRoundTowardZero();
+        };
+        return new SymVar("round_" + stableNodeId(n), ctx.mkFPRoundToIntegral(rm, fp), List.of(input));
+    }
+
+    private SmtNode translateFpRem(RemNode n) {
+        SmtNode l = translateNode(n.getX());
+        SmtNode r = translateNode(n.getY());
+        FPExpr fl = (FPExpr) l.toZ3(ctx);
+        FPExpr fr = (FPExpr) r.toZ3(ctx);
+        return new SymVar("fprem_" + stableNodeId(n), ctx.mkFPRem(fl, fr), List.of(l, r));
+    }
+
+    private SmtNode fpEq(ValueNode l, ValueNode r) {
+        SmtNode sl = translateNode(l);
+        SmtNode sr = translateNode(r);
+        FPExpr fl = (FPExpr) sl.toZ3(ctx);
+        FPExpr fr = (FPExpr) sr.toZ3(ctx);
+        return new SymVar("fpeq", ctx.mkFPEq(fl, fr), List.of(sl, sr));
+    }
+
+    private SmtNode fpLt(ValueNode l, ValueNode r, boolean unordered) {
+        SmtNode sl = translateNode(l);
+        SmtNode sr = translateNode(r);
+        FPExpr fl = (FPExpr) sl.toZ3(ctx);
+        FPExpr fr = (FPExpr) sr.toZ3(ctx);
+        BoolExpr lt = ctx.mkFPLt(fl, fr);
+        List<SmtNode> sources = List.of(sl, sr);
+        if (unordered) {
+            BoolExpr nanL = ctx.mkFPIsNaN(fl);
+            BoolExpr nanR = ctx.mkFPIsNaN(fr);
+            return new SymVar("fpult", ctx.mkOr(nanL, nanR, lt), sources);
+        }
+        return new SymVar("fplt", lt, sources);
+    }
+
+    /**
+     * Float binary operation — all with explicit RNE rounding mode.
+     */
+    private SmtNode fpBinOp(ValueNode l, ValueNode r, FpOp op) {
+        return new FpBinOp(translateNode(l), translateNode(r), op);
+    }
+
+    private SmtNode fpUnOp(ValueNode v, FpOp op) {
+        return new FpUnOp(translateNode(v), op);
+    }
+
+    private SmtNode bvBinOp(ValueNode l, ValueNode r, BitVecOp op) {
+        return new BitVecBinOp(translateNode(l), translateNode(r), op);
+    }
+
+    private SmtNode bvCmp(ValueNode l, ValueNode r, CmpOp op) {
+        return new BitVecCmp(translateNode(l), translateNode(r), op);
+    }
+
+    private SmtNode translateShortCircuitOr(ShortCircuitOrNode n) {
+        SmtNode xSmt = translateLogic(n.getX());
+        SmtNode ySmt = translateLogic(n.getY());
+        if (n.isXNegated()) {
+            xSmt = new BoolUnOp(xSmt, BoolOp.NOT);
+        }
+        if (n.isYNegated()) {
+            ySmt = new BoolUnOp(ySmt, BoolOp.NOT);
+        }
+        return new BoolBinOp(xSmt, ySmt, BoolOp.OR);
+    }
+
+    private SmtNode translateLogic(LogicNode logic) {
+        if (logic instanceof ValueNode vn) return translateNode(vn);
+        throw new UntranslatableException("LogicNode is not a ValueNode: " + logic.getClass().getSimpleName());
+    }
+
+    private ValueNode asValue(Node n) {
+        if (n instanceof ValueNode vn) return vn;
+        throw new UntranslatableException("Expected ValueNode, got: " + n.getClass().getSimpleName());
+    }
+
+    private SmtNode translateIsNull(IsNullNode n) {
+        String name = "isNull_" + stableNodeId(n);
+        var children = List.of(translateNode(n.getValue()));
+
+        if (StampTool.isPointerAlwaysNull(n.getValue())) {
+            return new SymVar(name, ctx.mkTrue(), children);
+        }
+        if (StampTool.isPointerNonNull(n.getValue())) {
+            return new SymVar(name, ctx.mkFalse(), children);
+        }
+
+        return new SymVar(name, ctx.mkBoolConst(name), children);
+    }
+
+    // ── Constants ─────────────────────────────────────────────────────────────
+
+    private SmtNode translateConstant(ConstantNode cn) {
+        Constant value = cn.getValue();
+        if (!(value instanceof JavaConstant jc)) {
+            throw new UntranslatableException(
+                    "Non-Java constant: " + value.getClass().getSimpleName());
+        }
+        if (cn.stamp(NodeView.DEFAULT) instanceof IntegerStamp intStamp) {
+            int bits = intStamp.getBits();
+            long raw = jc.getJavaKind() == JavaKind.Long ? jc.asLong() : jc.asInt();
+            return new SymVar(String.valueOf(raw), ctx.mkBV(raw, bits));
+        }
+        return translateJavaConstant(jc);
+    }
+
+    private SmtNode translateJavaConstant(JavaConstant jc) {
+        return switch (jc.getJavaKind()) {
+            case Byte, Short, Char, Int -> new SymVar(String.valueOf(jc.asInt()),
+                    ctx.mkBV(jc.asInt(), 32));
+            case Long -> new SymVar(String.valueOf(jc.asLong()),
+                    ctx.mkBV(jc.asLong(), 64));
+            case Float -> new SymVar(String.valueOf(jc.asFloat()),
+                    ctx.mkFP(jc.asFloat(), ctx.mkFPSort32()));
+            case Double -> new SymVar(String.valueOf(jc.asDouble()),
+                    ctx.mkFP(jc.asDouble(), ctx.mkFPSort64()));
+            case Boolean -> new SymVar(String.valueOf(jc.asInt() != 0),
+                    jc.asInt() != 0 ? ctx.mkTrue() : ctx.mkFalse());
+            default -> throw new UntranslatableException(
+                    "Constant kind not modeled: " + jc.getJavaKind());
+        };
+    }
+
+    // ── Parameters ────────────────────────────────────────────────────────────
+
+    private SmtNode translateParameter(ParameterNode n) {
+        return freshVar("p" + n.index(), n);
+    }
+
+    // ── Not Node ──────────────────────────────────────────────────────────────
+
+    private SmtNode translateNot(NotNode n) {
+        SmtNode inner = translateNode(n.getValue());
+        return new BitVecUnOp(inner, BitVecOp.NOT);
+    }
+
+    // ── Shift Conversion -──────────────────────────────────────────────────────
+
+    private SmtNode translateJavaShift(ValueNode shiftNode, ValueNode xNode, ValueNode yNode, BitVecOp op) {
+        SmtNode x = translateNode(xNode);
+        SmtNode y = translateNode(yNode);
+
+        BitVecExpr xBv = (BitVecExpr) x.toZ3(ctx);
+        BitVecExpr yBv = (BitVecExpr) y.toZ3(ctx);
+
+        int lhsBits = xBv.getSortSize();
+        int extendedBits = (shiftNode.stamp(NodeView.DEFAULT).getStackKind() == JavaKind.Int) ? 5 : 6;
+
+        BitVecExpr low = ctx.mkExtract(extendedBits - 1, 0, yBv);
+        BitVecExpr extended = ctx.mkZeroExt(lhsBits - extendedBits, low);
+
+        BitVecExpr shifted = switch (op) {
+            case SHL -> ctx.mkBVSHL(xBv, extended);
+            case ASHR -> ctx.mkBVASHR(xBv, extended);
+            case LSHR -> ctx.mkBVLSHR(xBv, extended);
+            default -> throw new IllegalArgumentException("not a shift op: " + op);
+        };
+
+        return new SymVar("shift_" + stableNodeId(shiftNode), shifted, List.of(x, y));
+    }
+
+    // ── Width conversions ──────────────────────────────────────────────────────
+
+    private SmtNode translateNarrow(NarrowNode n) {
+        SmtNode input = translateNode(n.getValue());
+        int to = n.getResultBits();
+        BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
+        if (bv.getSortSize() <= to) return input;
+        return new BitVecExtract(input, to - 1, 0);
+    }
+
+    private SmtNode translateSignExtend(SignExtendNode n) {
+        SmtNode input = translateNode(n.getValue());
+        int to = n.getResultBits();
+        BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
+        int actualFrom = bv.getSortSize();
+        if (actualFrom >= to) return input;
+        return new BitVecSignExt(input, to - actualFrom);
+    }
+
+    private SmtNode translateZeroExtend(ZeroExtendNode n) {
+        SmtNode input = translateNode(n.getValue());
+        int to = n.getResultBits();
+        BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
+        int actualFrom = bv.getSortSize();
+        if (actualFrom >= to) return input;
+        return new BitVecZeroExt(input, to - actualFrom);
+    }
+
+    // ── PiNode — stamp-range injection ────────────────────────────────────────
+
+    private SmtNode translatePi(PiNode n) {
+        SmtNode inner = translateNode(n.object());
+        if (n.stamp(NodeView.DEFAULT) instanceof IntegerStamp stamp
+                && inner.toZ3(ctx) instanceof BitVecExpr bv) {
+            int bits = bv.getSortSize();
+            pathCondition.push(ctx.mkAnd(
+                    ctx.mkBVSLE(ctx.mkBV(stamp.lowerBound(), bits), bv),
+                    ctx.mkBVSLE(bv, ctx.mkBV(stamp.upperBound(), bits))
+            ));
+        }
+        return inner;
+    }
+
+    // ── LoadFieldNode ─────────────────────────────────────────────────────────
+
+    private SmtNode translateLoadField(LoadFieldNode n) {
+        var field = n.field();
+        JavaKind kind = field.getJavaKind();
+
+        if (!kind.isPrimitive()) {
+            return opaqueUf(n);
+        }
+
+        String fieldKey = "field_" + field.getDeclaringClass().toJavaName(true).replace('.', '_')
+                + "_" + field.getName();
+
+        Sort returnSort = sortFor(n);
+
+        if (n.isStatic()) {
+            // Static field  acts like a symbolic constant.
+            FuncDecl<?> fd = ufCache.computeIfAbsent(fieldKey, k ->
+                    ctx.mkFuncDecl(k, new Sort[0], returnSort));
+            return new SymVar(fieldKey, fd.apply());
+        }
+
+        // Instance field one-argument UF.
+        SmtNode receiver = translateNode(n.object());
+        Expr<?> recvExpr = receiver.toZ3(ctx);
+        FuncDecl<?> fd = ufCache.computeIfAbsent(fieldKey, k ->
+                ctx.mkFuncDecl(k, new Sort[]{recvExpr.getSort()}, returnSort));
+        return new SymVar(fieldKey + "_" + stableNodeId(n), fd.apply(recvExpr), List.of(receiver));
+    }
+
+    private SmtNode translateLoadIndexed(LoadIndexedNode n) {
+        try {
+            JavaConstant arrayConstant = n.array().asJavaConstant();
+            JavaConstant indexConstant = n.index().asJavaConstant();
+
+            if (arrayConstant != null && indexConstant != null) {
+                int idx = indexConstant.asInt();
+                JavaConstant element = constantReflection.readArrayElement(
+                        arrayConstant, idx);
+                if (element != null) {
+                    if (n.stamp(NodeView.DEFAULT) instanceof IntegerStamp intStamp) {
+                        long raw = element.getJavaKind() == JavaKind.Long ? element.asLong() : element.asInt();
+                        return new SymVar(String.valueOf(raw), ctx.mkBV(raw, intStamp.getBits()));
+                    }
+                    return translateJavaConstant(element);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        String ufName;
+        JavaConstant arrayConstant = n.array().asJavaConstant();
+        if (arrayConstant != null) {
+            ufName = "smtArray_" + n.elementKind().name()
+                    + "_" + System.identityHashCode(arrayConstant);
+        } else {
+            ufName = "smtArray_" + n.elementKind().name()
+                    + "_" + stableNodeId(n);
+        }
+
+        Sort elementSort = sortFor(n);
+        Sort indexSort = ctx.mkBitVecSort(32);
+        FuncDecl<?> fd = ufCache.computeIfAbsent(ufName, k ->
+                ctx.mkFuncDecl(k, new Sort[]{indexSort}, elementSort));
+
+        Expr<?> indexExpr;
+        SmtNode indexSource = null;
+        try {
+            indexSource = translateNode(n.index());
+            indexExpr = indexSource.toZ3(ctx);
+        } catch (UntranslatableException e) {
+            indexExpr = ctx.mkBVConst("idx_" + stableNodeId(n), 32);
+        }
+
+        return new SymVar(ufName, fd.apply(indexExpr),
+                indexSource != null ? List.of(indexSource) : List.of());
+    }
+
+    // Float convert
+    private SmtNode translateFloatConvert(FloatConvertNode n) {
+        SmtNode input = translateNode(n.getValue());
+        String name = "floatConvert_" + stableNodeId(n);
+        FloatConvert op = n.getFloatConvert();
+
+        return switch (op) {
+            case F2I, D2I -> new SymVar(name, fpToSignedBvJava((FPExpr) input.toZ3(ctx), 32), List.of(input));
+            case F2L, D2L -> new SymVar(name, fpToSignedBvJava((FPExpr) input.toZ3(ctx), 64), List.of(input));
+
+            case F2UI, D2UI -> new SymVar(name, fpToUnsignedBvJava((FPExpr) input.toZ3(ctx), 32), List.of(input));
+            case F2UL, D2UL -> new SymVar(name, fpToUnsignedBvJava((FPExpr) input.toZ3(ctx), 64), List.of(input));
+
+            case I2F, L2F, UI2F, UL2F, I2D, L2D, UI2D, UL2D -> {
+                BitVecExpr bvExpr = (BitVecExpr) input.toZ3(ctx);
+                boolean signed = op == FloatConvert.I2F || op == FloatConvert.L2F
+                        || op == FloatConvert.I2D || op == FloatConvert.L2D;
+                FPSort sort = (op == FloatConvert.I2F || op == FloatConvert.L2F
+                        || op == FloatConvert.UI2F || op == FloatConvert.UL2F)
+                        ? ctx.mkFPSort32() : ctx.mkFPSort64();
+                yield new SymVar(name,
+                        ctx.mkFPToFP(ctx.mkFPRoundNearestTiesToEven(), bvExpr, sort, signed),
+                        List.of(input));
+            }
+
+            case F2D -> {
+                FPExpr fpExpr = (FPExpr) input.toZ3(ctx);
+                yield new SymVar(name,
+                        ctx.mkFPToFP(ctx.mkFPRoundNearestTiesToEven(), fpExpr, ctx.mkFPSort64()),
+                        List.of(input));
+            }
+
+            case D2F -> {
+                FPExpr fpExpr = (FPExpr) input.toZ3(ctx);
+                yield new SymVar(name,
+                        ctx.mkFPToFP(ctx.mkFPRoundNearestTiesToEven(), fpExpr, ctx.mkFPSort32()),
+                        List.of(input));
+            }
+        };
+    }
+
+    /**
+     * Encodes Java float-to-signed-int cast semantics as a total SMT term.
+     * Java JLS §5.1.3: NaN → 0; x ≥ 2^(bits-1) → MAX_VALUE; x < -2^(bits-1) → MIN_VALUE;
+     * otherwise truncate toward zero.
+     */
+    private BitVecExpr fpToSignedBvJava(FPExpr fp, int bits) {
+        Expr<FPRMSort> rtz = ctx.mkFPRoundTowardZero();
+        FPSort sort = fp.getSort();
+
+        BitVecExpr minBv = ctx.mkBV(bits == 32 ? Integer.MIN_VALUE : Long.MIN_VALUE, bits);
+        BitVecExpr maxBv = ctx.mkBV(bits == 32 ? Integer.MAX_VALUE : Long.MAX_VALUE, bits);
+        BitVecExpr zeroBv = ctx.mkBV(0, bits);
+
+        FPExpr fpSatUpper = (bits == 32)
+                ? ctx.mkFP(2147483648.0f, sort)  // +2^31 in float
+                : ctx.mkFP(9223372036854775808.0, sort); // +2^63 in double
+        FPExpr fpSatLower = (bits == 32)
+                ? ctx.mkFP(-2147483648.0f, sort) // -2^31 in float
+                : ctx.mkFP(-9223372036854775808.0, sort); // -2^63 in double
+
+        BoolExpr isNaN = ctx.mkFPIsNaN(fp);
+        BoolExpr geUpper = ctx.mkFPGEq(fp, fpSatUpper);
+        BoolExpr ltLower = ctx.mkFPLt(fp, fpSatLower);
+
+        BitVecExpr inRange = ctx.mkFPToBV(rtz, fp, bits, true);
+
+        return (BitVecExpr) ctx.mkITE(isNaN, zeroBv,
+                ctx.mkITE(geUpper, maxBv,
+                        ctx.mkITE(ltLower, minBv,
+                                inRange)));
+    }
+
+    /**
+     * Encodes Java/Graal float-to-unsigned-int cast semantics as a total SMT term.
+     * NaN → 0; fp ≤ 0 → 0; fp ≥ 2^bits → UINT_MAX; otherwise truncate toward zero.
+     */
+    private BitVecExpr fpToUnsignedBvJava(FPExpr fp, int bits) {
+        Expr<FPRMSort> rtz = ctx.mkFPRoundTowardZero();
+        FPSort sort = fp.getSort();
+
+        BitVecExpr zeroBv = ctx.mkBV(0, bits);
+        BitVecExpr maxUnsigned = ctx.mkBV(-1L, bits);
+
+        FPExpr fpZero = ctx.mkFP(0.0, sort);
+        FPExpr fpUpperExcl = (bits == 32)
+                ? ctx.mkFP(4294967296.0, sort) // 2^32
+                : ctx.mkFP(18446744073709551616.0, sort); // 2^64
+
+        BoolExpr isNaN = ctx.mkFPIsNaN(fp);
+        BoolExpr leZero = ctx.mkFPLEq(fp, fpZero);
+        BoolExpr geUpper = ctx.mkFPGEq(fp, fpUpperExcl);
+
+        BitVecExpr inRange = ctx.mkFPToBV(rtz, fp, bits, false);
+
+        return (BitVecExpr) ctx.mkITE(isNaN, zeroBv,
+                ctx.mkITE(leZero, zeroBv,
+                        ctx.mkITE(geUpper, maxUnsigned,
+                                inRange)));
+    }
+
+    // Reinterpret
+    private SmtNode translateReinterpret(ReinterpretNode n) {
+        JavaKind inputKind = n.getValue().stamp(NodeView.DEFAULT).getStackKind();
+        int bitwidth = ((PrimitiveStamp) n.stamp(NodeView.DEFAULT)).getBits();
+
+        SmtNode input = translateNode(n.getValue());
+        String name = "reinterpret_bv2fp_" + stableNodeId(n);
+
+        return switch (inputKind) {
+            case Float, Double -> {
+                FPExpr fp = (FPExpr) input.toZ3(ctx);
+                yield new SymVar(name, ctx.mkFPToIEEEBV(fp), List.of(input));
+            }
+
+            case Int, Long -> {
+                BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
+                FPSort sort = bitwidth == 32 ? ctx.mkFPSort32() : ctx.mkFPSort64();
+                yield new SymVar(name, ctx.mkFPToFP(bv, sort), List.of(input));
+            }
+
+            default -> throw new UntranslatableException("ReinterpretNode: unknown kind " + inputKind);
+
+        };
+    }
+
+    // ── Phi ───────────────────────────────────────────────────────────────────
+
+    private SmtNode translatePhi(ValuePhiNode n) {
+        if (n.merge() instanceof LoopBeginNode) {
+            ValueNode single = n.singleValueOrThis();
+            if (single != n) {
+                return translateNode(single);
+            }
+            // LoopBeginNode doesn't propagate that it is guarded to be unsigned
+            // to its stamp.
+            return freshVar("loopPhi_" + stableNodeId(n), n, ((LoopBeginNode) n.merge()).isProtectedNonOverflowingUnsigned());
+        }
+        List<ValueNode> values = new ArrayList<>(n.values());
+        if (values.size() == 1) return translateNode(values.getFirst());
+        SmtNode result = translateNode(values.getLast());
+        for (int i = values.size() - 2; i >= 0; i--) {
+            BoolNode pred = new BoolNode("phi_pred_" + stableNodeId(n) + "_" + i);
+            result = new ITENode(pred, translateNode(values.get(i)), result);
+        }
+        return result;
+    }
+
+    // ── Integer test ──────────────────────────────────────────────────────────
+
+    private SmtNode translateIntegerTest(IntegerTestNode n) {
+        SmtNode x = translateNode(n.getX());
+        SmtNode y = translateNode(n.getY());
+        BitVecExpr xBv = (BitVecExpr) x.toZ3(ctx);
+        BitVecExpr yBv = (BitVecExpr) y.toZ3(ctx);
+        int bits = xBv.getSortSize();
+        BoolExpr result = ctx.mkEq(ctx.mkBVAND(xBv, yBv), ctx.mkBV(0, bits));
+        return new SymVar("intTest_" + stableNodeId(n), result, List.of(x, y));
+    }
+
+    // ── Exact arithmetic overflow detectors ───────────────────────────────────
+
+    private SmtNode translateAddExactOverflow(IntegerAddExactOverflowNode n) {
+        SmtNode x = translateNode(n.getX());
+        SmtNode y = translateNode(n.getY());
+        BitVecExpr xBv = (BitVecExpr) x.toZ3(ctx);
+        BitVecExpr yBv = (BitVecExpr) y.toZ3(ctx);
+        BoolExpr noOverflow = ctx.mkBVAddNoOverflow(xBv, yBv, true);
+        BoolExpr noUnderflow = ctx.mkBVAddNoUnderflow(xBv, yBv);
+        return new SymVar("addOverflow_" + stableNodeId(n),
+                ctx.mkNot(ctx.mkAnd(noOverflow, noUnderflow)), List.of(x, y));
+    }
+
+
+    private SmtNode translateSubExactOverflow(IntegerSubExactOverflowNode n) {
+        SmtNode x = translateNode(n.getX());
+        SmtNode y = translateNode(n.getY());
+        BitVecExpr xBv = (BitVecExpr) x.toZ3(ctx);
+        BitVecExpr yBv = (BitVecExpr) y.toZ3(ctx);
+        BoolExpr noOverflow = ctx.mkBVSubNoOverflow(xBv, yBv);
+        BoolExpr noUnderflow = ctx.mkBVSubNoUnderflow(xBv, yBv, true);
+        return new SymVar("subOverflow_" + stableNodeId(n),
+                ctx.mkNot(ctx.mkAnd(noOverflow, noUnderflow)), List.of(x, y));
+    }
+
+
+    private SmtNode translateMulExactOverflow(IntegerMulExactOverflowNode n) {
+        SmtNode x = translateNode(n.getX());
+        SmtNode y = translateNode(n.getY());
+        BitVecExpr xBv = (BitVecExpr) x.toZ3(ctx);
+        BitVecExpr yBv = (BitVecExpr) y.toZ3(ctx);
+        BoolExpr noOverflow = ctx.mkBVMulNoOverflow(xBv, yBv, true);
+        BoolExpr noUnderflow = ctx.mkBVMulNoUnderflow(xBv, yBv);
+        return new SymVar("mulOverflow_" + stableNodeId(n),
+                ctx.mkNot(ctx.mkAnd(noOverflow, noUnderflow)), List.of(x, y));
+    }
+
+
+    private SmtNode translateNegExactOverflow(IntegerNegExactOverflowNode n) {
+        SmtNode x = translateNode(n.getValue());
+        BitVecExpr xBv = (BitVecExpr) x.toZ3(ctx);
+        return new SymVar("negOverflow_" + stableNodeId(n),
+                ctx.mkNot(ctx.mkBVNegNoOverflow(xBv)), List.of(x));
+    }
+    // ── Bit manipulation ──────────────────────────────────────────────────
+
+    private SmtNode translateBitCount(BitCountNode n) {
+        SmtNode input = translateNode(n.getValue());
+        BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
+        int inBits = bv.getSortSize();
+        BitVecExpr sum = ctx.mkBV(0, inBits);
+        for (int i = 0; i < inBits; i++) {
+            sum = ctx.mkBVAdd(sum, ctx.mkZeroExt(inBits - 1, ctx.mkExtract(i, i, bv)));
+        }
+
+        BitVecExpr result = inBits > 32 ? ctx.mkExtract(31, 0, sum)
+                : inBits < 32 ? ctx.mkZeroExt(32 - inBits, sum) : sum;
+        return new SymVar("popcount_" + stableNodeId(n), result, List.of(input));
+    }
+
+    private SmtNode translateCountLeadingZeros(CountLeadingZerosNode n) {
+        SmtNode input = translateNode(n.getValue());
+        BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
+        int inBits = bv.getSortSize();
+
+        BitVecExpr result = ctx.mkBV(inBits, 32);
+        for (int i = 0; i < inBits; i++) {
+            result = (BitVecExpr) ctx.mkITE(
+                    ctx.mkEq(ctx.mkExtract(i, i, bv), ctx.mkBV(1, 1)),
+                    ctx.mkBV(inBits - 1 - i, 32),
+                    result);
+        }
+        return new SymVar("clz_" + stableNodeId(n), result, List.of(input));
+    }
+
+    private SmtNode translateCountTrailingZeros(CountTrailingZerosNode n) {
+        SmtNode input = translateNode(n.getValue());
+        BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
+        int inBits = bv.getSortSize();
+
+        BitVecExpr result = ctx.mkBV(inBits, 32);
+        for (int i = inBits - 1; i >= 0; i--) {
+            result = (BitVecExpr) ctx.mkITE(
+                    ctx.mkEq(ctx.mkExtract(i, i, bv), ctx.mkBV(1, 1)),
+                    ctx.mkBV(i, 32),
+                    result);
+        }
+        return new SymVar("ctz_" + stableNodeId(n), result, List.of(input));
+    }
+
+    private SmtNode translateReverseBits(ReverseBitsNode n) {
+        SmtNode input = translateNode(n.getValue());
+        BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
+        int inBits = bv.getSortSize();
+
+        BitVecExpr result = ctx.mkExtract(0, 0, bv);
+        for (int i = 1; i < inBits; i++) {
+            result = ctx.mkConcat(result, ctx.mkExtract(i, i, bv));
+        }
+        return new SymVar("reverseBits_" + stableNodeId(n), result, List.of(input));
+    }
+
+    private SmtNode translateReverseBytes(ReverseBytesNode n) {
+        SmtNode input = translateNode(n.getValue());
+        BitVecExpr bv = (BitVecExpr) input.toZ3(ctx);
+        int inBits = bv.getSortSize();
+        int numBytes = inBits / 8;
+
+        BitVecExpr result = ctx.mkExtract(7, 0, bv);
+        for (int i = 1; i < numBytes; i++) {
+            result = ctx.mkConcat(result, ctx.mkExtract(8 * i + 7, 8 * i, bv));
+        }
+        return new SymVar("reverseBytes_" + stableNodeId(n), result, List.of(input));
+    }
+    // ── Signum ────────────────────────────────────────────────────────────────
+    private SmtNode translateSignum(SignumNode n) {
+        SmtNode x = translateNode(n.getValue());
+        FPExpr fp = (FPExpr) x.toZ3(ctx);
+        FPSort sort = fp.getSort();
+        boolean is32 = sort.equals(ctx.mkFPSort32());
+
+        FPExpr nan  = ctx.mkFPNaN(sort);
+        FPExpr neg1 = is32 ? ctx.mkFP(-1.0f, sort) : ctx.mkFP(-1.0, sort);
+        FPExpr pos1 = is32 ? ctx.mkFP(1.0f, sort)  : ctx.mkFP(1.0, sort);
+        FPExpr fpZero = ctx.mkFPZero(sort, false);
+
+        BoolExpr isNaN = ctx.mkFPIsNaN(fp);
+        BoolExpr isNeg = ctx.mkFPLt(fp, fpZero);
+        BoolExpr isPos = ctx.mkFPGt(fp, fpZero);
+
+        Expr<?> result = ctx.mkITE(isNaN, nan,
+                ctx.mkITE(isNeg, neg1,
+                        ctx.mkITE(isPos, pos1, fp)));
+        return new SymVar("signum_" + stableNodeId(n), result, List.of(x));
+    }
+
+    // ── Opaque uninterpreted function ─────────────────────────────────────────
+
+    private SmtNode opaqueUf(ValueNode n) {
+        String key = n.getClass().getSimpleName() + "_" + stableNodeId(n);
+        Sort returnSort = sortFor(n);
+        List<Expr<?>> argExprs = new ArrayList<>();
+        List<Sort> argSorts = new ArrayList<>();
+        List<SmtNode> argNodes = new ArrayList<>();
+        for (Node input : n.inputs()) {
+            if (input instanceof ValueNode vn) {
+                try {
+                    SmtNode smtArg = translateNode(vn);
+                    Expr<?> e = smtArg.toZ3(ctx);
+                    argExprs.add(e);
+                    argSorts.add(e.getSort());
+                    argNodes.add(smtArg);
+                } catch (UntranslatableException ignored) {
+                }
+            }
+        }
+        FuncDecl<?> fd = ufCache.computeIfAbsent(key, k ->
+                ctx.mkFuncDecl(k, argSorts.toArray(new Sort[0]), returnSort));
+        return new SymVar(key, fd.apply(argExprs.toArray(new Expr[0])), argNodes);
+    }
+
+    // ── Utilities ─────────────────────────────────────────────────────────────
+
+    private SmtNode freshVar(String name, ValueNode n) {
+        return freshVar(name, n, true);
+    }
+
+    private SmtNode freshVar(String name, ValueNode n, boolean signed) {
+        JavaKind kind = n.stamp(NodeView.DEFAULT).getStackKind();
+        if (!(n.stamp(NodeView.DEFAULT) instanceof PrimitiveStamp)) {
+            return new SymVar("opaque_" + name, ctx.mkBVConst(name, 64));
+        }
+
+        var bitwidth = ((PrimitiveStamp) n.stamp(NodeView.DEFAULT)).getBits();
+        return switch (kind) {
+            case Int, Long -> new IntNode(name, bitwidth, (IntegerStamp) n.stamp(NodeView.DEFAULT), signed);
+            case Float, Double -> new FloatNode(name, bitwidth == 32 ? FloatNode.FloatKind.F32 : FloatNode.FloatKind.F64);
+            default -> throw new UntranslatableException("freshVar: unknown kind " + kind);
+        };
+    }
+
+    private Sort sortFor(ValueNode n) {
+        if (n.stamp(NodeView.DEFAULT) instanceof IntegerStamp intStamp) {
+            return ctx.mkBitVecSort(intStamp.getBits());
+        }
+        return switch (n.stamp(NodeView.DEFAULT).getStackKind()) {
+            case Byte, Short, Char, Int -> ctx.mkBitVecSort(32);
+            case Long -> ctx.mkBitVecSort(64);
+            case Float -> ctx.mkFPSort32();
+            case Double -> ctx.mkFPSort64();
+            case Boolean -> ctx.mkBoolSort();
+            default -> ctx.mkBitVecSort(64);
+        };
+    }
+
+    static final class UntranslatableException extends RuntimeException {
+        UntranslatableException(String msg) {
+            super(msg);
+        }
+    }
+
+}

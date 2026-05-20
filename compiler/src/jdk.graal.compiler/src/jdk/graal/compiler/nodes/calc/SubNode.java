@@ -39,6 +39,7 @@ import jdk.graal.compiler.nodes.ValueNode;
 import jdk.graal.compiler.nodes.spi.CanonicalizerTool;
 import jdk.graal.compiler.nodes.spi.NodeLIRBuilderTool;
 import jdk.graal.compiler.nodes.util.GraphUtil;
+import jdk.graal.compiler.smt.SMTUtils;
 import jdk.vm.ci.meta.Constant;
 import jdk.vm.ci.meta.PrimitiveConstant;
 
@@ -171,7 +172,16 @@ public class SubNode extends BinaryArithmeticNode<Sub> implements NarrowableArit
         }
 
         BinaryOp<Sub> op = getOp(forX, forY);
-        return canonical(this, op, stamp, forX, forY, view);
+        ValueNode result = canonical(this, op, stamp, forX, forY, view);
+        if (result != this && SMTUtils.introduceError("Sub", tool)) {
+            // Error: when sub(x, const) rewrites to add(x, -const), return add(x, -const-1)
+            if (result instanceof AddNode addResult && addResult.getY().isJavaConstant()) {
+                long c = addResult.getY().asJavaConstant().asLong();
+                return BinaryArithmeticNode.add(forX, ConstantNode.forIntegerStamp(addResult.getY().stamp(view), c - 1), view);
+            }
+            return forX;
+        }
+        return result;
     }
 
     @Override

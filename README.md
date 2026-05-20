@@ -1,3 +1,107 @@
+# SMT-Based Canonicalization Checker: Overview
+
+Files modified for SMT-based canonicalization checking:
+- `compiler/src/jdk.graal.compiler/src/jdk/graal/compiler/smt/`  
+  Added as a new package containing the SMT verification infrastructure. It includes the intermediate symbolic representation, bitvector, Boolean, integer, and floating-point expression nodes, path-condition support, the IR-to-SMT translator, solver interaction through Z3, verification result types, and utility classes.
+
+- `compiler/mx.compiler/suite.py`  
+  Modified to add the Z3 dependency to the compiler suite configuration.
+
+- `compiler/src/jdk.graal.compiler/src/jdk/graal/compiler/debug/DebugOptions.java`  
+  Modified to add a debug option used to intentionally trigger incorrect canonicalization behavior during evaluation.
+
+- `compiler/src/jdk.graal.compiler/src/jdk/graal/compiler/phases/common/CanonicalizerPhase.java`  
+  Modified to invoke the SMT verifier before selected canonicalization replacements are committed.
+
+- `compiler/src/jdk.graal.compiler/src/jdk/graal/compiler/nodes/calc/AddNode.java`  
+  Modified to support controlled injection of an incorrect canonicalization result for testing.
+
+- `compiler/src/jdk.graal.compiler/src/jdk/graal/compiler/nodes/calc/SubNode.java`  
+  Modified to support controlled injection of an incorrect subtraction-related canonicalization result.
+
+- `compiler/src/jdk.graal.compiler/src/jdk/graal/compiler/nodes/calc/MulNode.java`  
+  Modified to support controlled injection of an incorrect strength-reduction result.
+
+- `compiler/src/jdk.graal.compiler/src/jdk/graal/compiler/nodes/calc/NegateNode.java`  
+  Modified to support controlled injection of an incorrect negation-related rewrite.
+
+- `compiler/src/jdk.graal.compiler/src/jdk/graal/compiler/nodes/calc/NotNode.java`  
+  Modified to support controlled injection of an incorrect bitwise-complement rewrite.
+
+- `compiler/src/jdk.graal.compiler/src/jdk/graal/compiler/nodes/calc/XorNode.java`  
+  Modified to support controlled injection of an incorrect XOR canonicalization result.
+
+- `compiler/src/jdk.graal.compiler/src/jdk/graal/compiler/nodes/calc/LeftShiftNode.java`  
+  Modified to support controlled injection of an incorrect shift-combination result.
+
+- `compiler/src/jdk.graal.compiler/src/jdk/graal/compiler/nodes/calc/UnsignedRightShiftNode.java`  
+  Modified to support controlled injection of an incorrect mask-related canonicalization result.
+
+- `compiler/src/jdk.graal.compiler/src/jdk/graal/compiler/nodes/calc/SignExtendNode.java`  
+  Modified to support controlled injection of an incorrect sign-extension rewrite.
+
+- `compiler/src/jdk.graal.compiler/src/jdk/graal/compiler/replacements/nodes/arithmetic/IntegerNegExactOverflowNode.java`  
+  Modified by adding an accessor for the input value, allowing the SMT translator to inspect the node.
+
+- `compiler/src/jdk.graal.compiler.test/src/jdk/graal/compiler/nodes/test/SmtCanonicalizationErrorTest.java`  
+  Added targeted tests containing intentionally incorrect canonicalization cases used to evaluate whether the verifier detects unsound rewrites.
+
+
+
+
+# SMT-Based Canonicalization Checker: Setup Guide
+
+## 1. Clone `mx` and add it to `PATH`
+
+`mx` is the build tool for all Graal suite projects.
+
+```bash
+git clone https://github.com/graalvm/mx.git
+export PATH="$PWD/mx:$PATH"
+```
+
+## 2. Download the Z3 binary distribution
+
+```bash
+wget https://github.com/Z3Prover/z3/releases/download/z3-4.13.3/z3-4.13.3-x64-glibc-2.35.zip
+unzip z3-4.13.3-x64-glibc-2.35.zip
+export Z3_HOME="$PWD/z3-4.13.3-x64-glibc-2.35"
+```
+
+## 3. Export the native library path
+### Linux
+
+```bash
+export LD_LIBRARY_PATH="$Z3_HOME/bin${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+```
+
+## 4. Build the compiler suite
+
+In the repository root run:
+```bash
+cd compiler
+mx build
+```
+
+## 5. Enable the SMT checker
+
+The checker is disabled by default and only activates when both:
+
+1. JVM assertions are enabled (`-ea`), and
+2. the `VerifyCanonicalizationWithSMT` option is set.
+
+Pass both flags when running tests or invoking the compiler:
+
+```bash
+mx unittest -ea -Djdk.graal.VerifyCanonicalizationWithSMT=true --enable-native-access=jdk.graal.compiler SmtCanonicalizationErrorTest
+```
+
+Or, for a full unit test run:
+
+```bash
+mx gate --tags=test --extra-vm-argument="-ea -Djdk.graal.VerifyCanonicalizationWithSMT=true --enable-native-access=jdk.graal.compiler"
+```
+
 [![GraalVM](.github/assets/logo_320x64.svg)][website]
 
 [![GraalVM downloads][badge-dl]][downloads] [![GraalVM docs][badge-docs]][docs] [![GraalVM on Slack][badge-slack]][slack] [![GraalVM Gate][badge-gate]][gate] [![License][badge-license]](#license) [![GraalVM on LinkedIn][badge-linkedin]][social-linkedin] [![GraalVM on X][badge-x]][social-x] [![GraalVM on Bluesky][badge-bluesky]][social-bluesky] [![GraalVM on Medium][badge-medium]][social-medium] [![GraalVM on YouTube][badge-yt]][social-youtube]

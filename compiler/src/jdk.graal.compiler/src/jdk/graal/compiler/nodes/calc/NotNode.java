@@ -41,6 +41,7 @@ import jdk.graal.compiler.nodes.spi.NodeLIRBuilderTool;
 import jdk.graal.compiler.nodes.spi.StampInverter;
 import jdk.graal.compiler.lir.gen.ArithmeticLIRGeneratorTool;
 import jdk.graal.compiler.nodeinfo.NodeInfo;
+import jdk.graal.compiler.smt.SMTUtils;
 
 /**
  * Binary negation of long or integer values.
@@ -50,7 +51,7 @@ public final class NotNode extends UnaryArithmeticNode<Not> implements Arithmeti
 
     public static final NodeClass<NotNode> TYPE = NodeClass.create(NotNode.class);
 
-    protected NotNode(ValueNode x) {
+    public NotNode(ValueNode x) {
         super(TYPE, BinaryArithmeticNode.getArithmeticOpTable(x).getNot(), x);
     }
 
@@ -69,7 +70,16 @@ public final class NotNode extends UnaryArithmeticNode<Not> implements Arithmeti
         if (ret != this) {
             return ret;
         }
-        return canonicalize(this, forValue);
+        ValueNode result = canonicalize(this, forValue);
+        if (result != this && SMTUtils.introduceError("Not", tool)) {
+            // Error: ~(-x) = x-1; return x+1 instead
+            if (forValue instanceof NegateNode negateNode) {
+                ConstantNode one = ConstantNode.forIntegerStamp(forValue.stamp(NodeView.DEFAULT), 1);
+                return AddNode.create(negateNode.getValue(), one, NodeView.DEFAULT);
+            }
+            return forValue;
+        }
+        return result;
     }
 
     private static ValueNode canonicalize(NotNode node, ValueNode x) {
